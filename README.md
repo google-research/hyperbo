@@ -1,6 +1,6 @@
 # HyperBO - Prior Discovery
 A Jax/Flax codebase for prior discovery in meta Bayesian optimization.
-The algorithm and analyses can be found in *[Pre-training helps Bayesian optimization too](https://arxiv.org/abs/2109.08215)*.
+The algorithm and analyses can be found in *[Automatic prior selection for meta Bayesian optimization with a case study on tuning deep neural network optimizers](https://arxiv.org/abs/2109.08215)*.
 
 Disclaimer: This is not an officially supported Google product.
 
@@ -12,7 +12,7 @@ To install the latest development version inside a virtual environment, run
 python3 -m venv env-pd
 source env-pd/bin/activate
 pip install --upgrade pip
-pip install "git+https://github.com/google-research/hyperbo.git#egg=hyperbo"
+pip install "git+https://github.com/google/hyperbo.git#egg=hyperbo"
 ```
 
 ## Dataset
@@ -23,10 +23,10 @@ See tests.
 
 ## Citing
 ```
-@article{wang2021hyperbo,
-  title={Pre-training helps Bayesian optimization too},
+@article{wang2021automatic,
+  title={Automatic prior selection for meta Bayesian optimization with a case study on tuning deep neural network optimizers},
   author={Wang, Zi and Dahl, George E and Swersky, Kevin and Lee, Chansoo and Mariet, Zelda and Nado, Zachary and Gilmer, Justin and Snoek, Jasper and Ghahramani, Zoubin},
   journal={arXiv preprint arXiv:2109.08215},
-  year={2022}
+  year={2021}
 }
 ```
