@@ -2,6 +2,8 @@
 A Jax/Flax codebase for prior discovery in meta Bayesian optimization.
 The algorithm and analyses can be found in *[Pre-training helps Bayesian optimization too](https://ziw.mit.edu/pub/hyperbo.pdf)*.
 
+Also see [GPax](https://github.com/google-research/gpax) for a more modular implementation of Gaussian processes used by HyperBO based on [Tensorflow Probability](https://www.tensorflow.org/probability) with Jax backend.
+
 Disclaimer: This is not an officially supported Google product.
 
 ## Installation
