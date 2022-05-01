@@ -1,6 +1,6 @@
 # HyperBO - Prior Discovery
 A Jax/Flax codebase for prior discovery in meta Bayesian optimization.
-The algorithm and analyses can be found in *[Pre-training helps Bayesian optimization too](https://arxiv.org/abs/2109.08215)*.
+The algorithm and analyses can be found in *[Pre-training helps Bayesian optimization too](https://ziw.mit.edu/pub/hyperbo.pdf)*.
 
 Disclaimer: This is not an officially supported Google product.
 
