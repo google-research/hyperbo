@@ -17,6 +17,7 @@
 
 import logging
 
+from hyperbo.basics import definitions as defs
 from hyperbo.basics import linalg
 from hyperbo.basics import params_utils
 import jax
@@ -24,11 +25,41 @@ import jax.numpy as jnp
 
 # import jax._src.dtypes as dtypes
 
+SubDataset = defs.SubDataset
+
 vmap = jax.vmap
 EPS = 1e-10
 
 identity_warp = lambda x: x
 softplus_warp = jax.nn.softplus
+
+
+def sub_sample_dataset_iterator(dataset, batch_size=100, key=None):
+  """Iterator for subsample a dataset such that each sub_dataset has at most batch_size data points.
+
+  Args:
+    dataset: dict of SubDataset.
+    batch_size: int, maximum number of data points per sub dataset in a batch.
+    key: Jax random state.
+
+  Yields:
+    A sub sampled dataset batch.
+  """
+  if key is None:
+    key = jax.random.PRNGKey(0)
+    logging.info('Using default random state in sub_sample_dataset.')
+  while True:
+    sub_sampled_dataset = {}
+    for sub_dataset_key, sub_dataset in dataset.items():
+      if sub_dataset.x.shape[0] >= batch_size:
+        key, subkey = jax.random.split(key, 2)
+        indices = jax.random.permutation(subkey, sub_dataset.x.shape[0])
+        sub_sampled_dataset[sub_dataset_key] = SubDataset(
+            x=sub_dataset.x[indices[:batch_size], :],
+            y=sub_dataset.y[indices[:batch_size], :])
+      else:
+        sub_sampled_dataset[sub_dataset_key] = sub_dataset
+    yield sub_sampled_dataset
 
 
 def squareplus_warp(x):

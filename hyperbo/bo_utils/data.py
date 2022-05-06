@@ -22,12 +22,13 @@ import pickle
 from absl import logging
 from hyperbo.basics import definitions as defs
 from hyperbo.gp_utils import gp
+
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
-
 from tensorflow.io import gfile
+
 
 partial = functools.partial
 

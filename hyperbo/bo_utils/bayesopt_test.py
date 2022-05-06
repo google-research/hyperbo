@@ -53,7 +53,7 @@ class BayesOptTest(parameterized.TestCase):
             'noise_variance': 0.01,
         },
         config={
-            'method': 'momentum',
+            'method': 'adam',
             'learning_rate': 1e-5,
             'beta': 0.9,
             'maxiter': 1
@@ -116,7 +116,7 @@ class BayesOptTest(parameterized.TestCase):
             'noise_variance': 0.01,
         },
         config={
-            'method': 'momentum',
+            'method': 'adam',
             'learning_rate': 1e-5,
             'beta': 0.9,
             'maxiter': 1

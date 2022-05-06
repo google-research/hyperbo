@@ -125,7 +125,7 @@ class GPTest(parameterized.TestCase):
     start_time = time.time()
     if use_gp_class:
       init_params.config.update({
-          'method': 'momentum',
+          'method': 'adam',
           'learning_rate': 1e-5,
           'beta': 0.9,
           'maxiter': 1,
