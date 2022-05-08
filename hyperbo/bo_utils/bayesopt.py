@@ -79,7 +79,8 @@ def run_synthetic(dataset,
                   iters,
                   warp_func=None,
                   init_random_key=None,
-                  method='hyperbo'):
+                  method='hyperbo',
+                  init_model=False):
   """Running bayesopt experiment with synthetic data.
 
   Args:
@@ -101,6 +102,7 @@ def run_synthetic(dataset,
     init_random_key: random state for jax.random, to be used to initialize
       required parts of GPParams.
     method: BO method.
+    init_model: to initialize model or not.
 
   Returns:
     All observations in (x, y) pairs returned by the bayesopt strategy and all
@@ -118,15 +120,17 @@ def run_synthetic(dataset,
     })
   else:
     model_class = gp.GP
+
   model = model_class(
       dataset=dataset,
       mean_func=mean_func,
       cov_func=cov_func,
       params=init_params,
       warp_func=warp_func)
-  model.init_params(init_random_key)
-  # Infer GP parameters.
-  model.train()
+  if init_model:
+    model.init_params(init_random_key)
+    # Infer GP parameters.
+    model.train()
 
   sub_dataset = simulated_bayesopt(
       model=model,
