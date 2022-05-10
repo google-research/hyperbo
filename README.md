@@ -18,7 +18,22 @@ pip install "git+https://github.com/google-research/hyperbo.git#egg=hyperbo"
 ```
 
 ## Dataset
-Please [download the dataset](http://storage.googleapis.com/gresearch/pint/pd1.tar.gz) and see pd1/README.txt for more information.
+To download the dataset, please copy and paste the following link to your browser's address bar.
+```
+http://storage.googleapis.com/gresearch/pint/pd1.tar.gz
+```
+See pd1/README.txt for more information. The data is licensed under the CC-BY 4.0 license.
+
+If you'd like to use the evaluations at each training step, the relevant columns of the data frame are
+```
+'valid/ce_loss'
+'train/ce_loss',
+'train/error_rate',
+```
+etc. They will hold arrays aligned with the global_step column that indicates what training step the measurement was taken at.
+
+See the "best_\*" columns for the best measurement achieved over training.
+
 
 ## Usage
 See tests.
