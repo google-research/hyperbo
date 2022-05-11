@@ -15,7 +15,8 @@
 
 """Bayesian optimization (BO) loop for sequential queries."""
 import dataclasses
-from typing import Callable, Optional, Sequence, Tuple, Union
+import time
+from typing import Callable, Optional, Sequence, Tuple, Union, Any
 
 from absl import logging
 from hyperbo.basics import definitions as defs
@@ -23,10 +24,73 @@ from hyperbo.experiments import const
 from hyperbo.gp_utils import gp
 from hyperbo.gp_utils import objectives as obj
 from hyperbo.gp_utils import priors
+import jax
 import jax.numpy as jnp
+import jaxopt
 import numpy as np
 import tensorflow as tf
+
 SubDataset = defs.SubDataset
+INPUT_SAMPLERS = const.INPUT_SAMPLERS
+
+
+def bayesopt(key: Any, model: gp.GP, sub_dataset_key: Union[int, str],
+             query_oracle: Callable[[Any], Any], ac_func: Callable[...,
+                                                                   jnp.array],
+             iters: int, input_sampler: Callable[..., jnp.array]) -> SubDataset:
+  """Running simulated bayesopt on a set of pre-evaluated inputs x_queries.
+
+  Args:
+    key: Jax random state.
+    model: gp.GP.
+    sub_dataset_key: key of the sub_dataset for testing in dataset.
+    query_oracle: evaluation function.
+    ac_func: acquisition function handle (see acfun.py).
+    iters: number of iterations in BayesOpt sequential queries.
+    input_sampler: function for sampling inputs among which the initial point is
+      chosen for acquisition function optimization.
+
+  Returns:
+    All observations after bayesopt in the form of an (x_observed, y_observed)
+    tuple. These observations include those made before bayesopt.
+  """
+  input_dim = model.input_dim
+  for i in range(iters):
+    start_time = time.time()
+    x_samples = input_sampler(key, input_dim)
+    evals = ac_func(
+        model=model,
+        sub_dataset_key=sub_dataset_key,
+        x_queries=x_samples)
+    select_idx = evals.argmax()
+    x_init = x_samples[select_idx]
+    def f(x):
+      return -ac_func(
+          model=model,
+          sub_dataset_key=sub_dataset_key,
+          x_queries=jnp.array([x])).flatten()[0]
+
+    opt = jaxopt.ScipyBoundedMinimize(method='L-BFGS-B', fun=f)
+    opt_ret = opt.run(
+        x_init, bounds=[jnp.zeros(input_dim),
+                        jnp.ones(input_dim)])
+    eval_datapoint = opt_ret.params, query_oracle(opt_ret.params[None, :])
+    logging.info(msg=f'{i}-th iter, x_init={x_init}, '
+                 f'eval_datapoint={eval_datapoint}, '
+                 f'elpased_time={time.time() - start_time}')
+    model.update_sub_dataset(
+        eval_datapoint, sub_dataset_key=sub_dataset_key, is_append=True)
+    if 'retrain' in model.params.config and model.params.config['retrain'] > 0:
+      if model.params.config['objective'] in [obj.regkl, obj.regeuc]:
+        raise ValueError('Objective must include NLL to retrain.')
+      else:
+        maxiter = model.params.config['retrain']
+        logging.info(msg=f'Retraining with maxiter = {maxiter}.')
+        model.params.config['maxiter'] = maxiter
+        model.train()
+
+  return model.dataset.get(sub_dataset_key,
+                           SubDataset(jnp.empty(0), jnp.empty(0)))
 
 
 def simulated_bayesopt(model: gp.GP, sub_dataset_key: Union[int, str],
@@ -80,7 +144,9 @@ def run_synthetic(dataset,
                   warp_func=None,
                   init_random_key=None,
                   method='hyperbo',
-                  init_model=False):
+                  init_model=False,
+                  finite_search_space=True,
+                  data_loader_name=''):
   """Running bayesopt experiment with synthetic data.
 
   Args:
@@ -102,7 +168,9 @@ def run_synthetic(dataset,
     init_random_key: random state for jax.random, to be used to initialize
       required parts of GPParams.
     method: BO method.
-    init_model: to initialize model or not.
+    init_model: to initialize model if True; otherwise False.
+    finite_search_space: use a finite search space if True; otherwise False.
+    data_loader_name: data loader name, e.g. pd1, hpob.
 
   Returns:
     All observations in (x, y) pairs returned by the bayesopt strategy and all
@@ -131,16 +199,28 @@ def run_synthetic(dataset,
     model.init_params(init_random_key)
     # Infer GP parameters.
     model.train()
-
-  sub_dataset = simulated_bayesopt(
-      model=model,
-      sub_dataset_key=sub_dataset_key,
-      queried_sub_dataset=queried_sub_dataset,
-      ac_func=ac_func,
-      iters=iters)
-  return (sub_dataset.x,
-          sub_dataset.y), (queried_sub_dataset.x,
-                           queried_sub_dataset.y), model.params.__dict__
+  if finite_search_space:
+    sub_dataset = simulated_bayesopt(
+        model=model,
+        sub_dataset_key=sub_dataset_key,
+        queried_sub_dataset=queried_sub_dataset,
+        ac_func=ac_func,
+        iters=iters)
+    return (sub_dataset.x,
+            sub_dataset.y), (queried_sub_dataset.x,
+                             queried_sub_dataset.y), model.params.__dict__
+  else:
+    _, sample_key = jax.random.split(init_random_key)
+    sub_dataset = bayesopt(
+        key=sample_key,
+        model=model,
+        sub_dataset_key=sub_dataset_key,
+        query_oracle=queried_sub_dataset,
+        ac_func=ac_func,
+        iters=iters,
+        input_sampler=INPUT_SAMPLERS[data_loader_name])
+    return (sub_dataset.x,
+            sub_dataset.y), None, model.params.__dict__
 
 
 def _onehot_matrix(shape, idx) -> np.ndarray:
