@@ -104,8 +104,11 @@ class GPTest(parameterized.TestCase):
             'method': 'slice_sample',
             'burnin': nsamples,
             'nsamples': nsamples,
+            'maxiter': 0,
+            'logging_interval': 1,
             'priors': priors.DEFAULT_PRIORS,
-            'mlp_features': (8,)
+            'mlp_features': (8,),
+            'batch_size': 100,
         })
     init_key, _ = jax.random.split(init_key)
     # bf.init_kumar_warp_with_shape(init_key, init_params, vx.shape)
@@ -117,7 +120,6 @@ class GPTest(parameterized.TestCase):
       init_params.model['dot_prod_sigma'] = jax.random.normal(
           init_key, (8, 8 * 2))
       init_params.model['dot_prod_bias'] = 0.
-
     warp_func = DEFAULT_WARP_FUNC
 
     model = gp.HGP(
@@ -126,7 +128,7 @@ class GPTest(parameterized.TestCase):
         cov_func=cov_func,
         params=init_params,
         warp_func=warp_func)
-    model.init_params(init_key)
+    model.initialize_params(init_key)
 
     init_nll, _, _ = model.stats()
 

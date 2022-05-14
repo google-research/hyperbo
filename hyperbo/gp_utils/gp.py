@@ -22,11 +22,13 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import flax
 from flax import linen as nn
 from hyperbo.basics import bfgs
+from hyperbo.basics import data_utils
 from hyperbo.basics import definitions as defs
 from hyperbo.basics import lbfgs
 from hyperbo.basics import linalg
 from hyperbo.basics import params_utils
 from hyperbo.gp_utils import basis_functions as bf
+from hyperbo.gp_utils import kernel
 from hyperbo.gp_utils import objectives as obj
 from hyperbo.gp_utils import utils
 import jax
@@ -54,7 +56,8 @@ def infer_parameters(mean_func,
                      dataset,
                      warp_func=None,
                      objective=obj.neg_log_marginal_likelihood,
-                     key=None):
+                     key=None,
+                     params_save_file=None):
   """Posterior inference for a meta GP.
 
   Args:
@@ -76,6 +79,7 @@ def infer_parameters(mean_func,
       neg_log_marginal_likelihood or sample_mean_cov_regularizer or linear
       combinations of them.
     key: Jax random state.
+    params_save_file: optional file name to save params.
 
   Returns:
     Dictionary of inferred parameters.
@@ -88,14 +92,17 @@ def infer_parameters(mean_func,
     return init_params
   params = init_params
   method = params.config['method']
+  batch_size = params.config['batch_size']
+  # TODO(wangzi): clean this up.
   if method == 'lbfgs':
     # To handle very large sub datasets.
     key, subkey = jax.random.split(key, 2)
-    dataset_iter = utils.sub_sample_dataset_iterator(
-        dataset, batch_size=1000, key=subkey)
+    dataset_iter = data_utils.sub_sample_dataset_iterator(
+        subkey, dataset, batch_size)
     dataset = next(dataset_iter)
 
-  maxiter = init_params.config.get('maxiter', 0)
+  maxiter = init_params.config['maxiter']
+  logging_interval = init_params.config['logging_interval']
 
   if maxiter <= 0 and method != 'slice_sample':
     return init_params
@@ -113,30 +120,39 @@ def infer_parameters(mean_func,
     optimizer = optax.adam(params.config['learning_rate'])
     opt_state = optimizer.init(params.model)
 
-    logging_interval = maxiter // 10 if maxiter > 10 else 1
-    best_loss = jnp.finfo(float).max
     key, subkey = jax.random.split(key, 2)
-    dataset_iter = utils.sub_sample_dataset_iterator(
-        dataset, batch_size=100, key=subkey)
-    best_model_param = params.model
+    dataset_iter = data_utils.sub_sample_dataset_iterator(
+        subkey, dataset, batch_size)
     model_param = params.model
-    for i in range(maxiter):
+    best_model_param = model_param
+    best_loss = jnp.finfo(float).max
+    for i in range(maxiter + 1):
       batch = next(dataset_iter)
-      grads = jax.grad(loss_func)(model_param, batch)
+      current_loss, grads = jax.value_and_grad(loss_func)(model_param, batch)
+      if best_loss > current_loss:
+        best_loss = current_loss
+        best_model_param = model_param
+      if i > maxiter:
+        break
       updates, opt_state = optimizer.update(grads, opt_state)
       model_param = optax.apply_updates(model_param, updates)
+      params.model = model_param
       if i % logging_interval == 0:
-        current_loss = loss_func(model_param, dataset)
-        if best_loss > current_loss:
-          best_model_param = model_param
-          best_loss = current_loss
-        utils.log_params_loss(
+        params_utils.log_params_loss(
             step=i,
-            model_params=model_param,
+            params=params,
             loss=current_loss,
-            warp_func=warp_func)
+            warp_func=warp_func,
+            params_save_file=params_save_file)
     params.model = best_model_param
+    params_utils.log_params_loss(
+        step=maxiter,
+        params=params,
+        loss=current_loss,
+        warp_func=warp_func,
+        params_save_file=params_save_file)
   else:
+
     @jit
     def loss_func(model_params):
       return objective(
@@ -145,6 +161,7 @@ def infer_parameters(mean_func,
           params=GPParams(model=model_params, config=init_params.config),
           dataset=dataset,
           warp_func=warp_func)
+
     if method == 'bfgs':
       params.model, _ = bfgs.bfgs(
           loss_func,
@@ -152,12 +169,34 @@ def infer_parameters(mean_func,
           tol=params.config['tol'],
           maxiter=params.config['maxiter'])
     elif method == 'lbfgs':
+
+      def lbfgs_callback(step, model_params, loss):
+        if step % logging_interval != 0:
+          return
+        params.model = model_params
+        params_utils.log_params_loss(
+            step,
+            params,
+            loss,
+            warp_func=warp_func,
+            params_save_file=params_save_file)
+
       if 'alpha' not in params.config:
         alpha = 1.0
       else:
         alpha = params.config['alpha']
-      _, params.model, _ = lbfgs.lbfgs(
-          loss_func, params.model, steps=params.config['maxiter'], alpha=alpha)
+      current_loss, params.model, _ = lbfgs.lbfgs(
+          loss_func,
+          params.model,
+          steps=params.config['maxiter'],
+          alpha=alpha,
+          callback=lbfgs_callback)
+      params_utils.log_params_loss(
+          step=maxiter,
+          params=params,
+          loss=current_loss,
+          warp_func=warp_func,
+          params_save_file=params_save_file)
     else:
       raise ValueError(f'Optimization method {method} is not supported.')
   params.cache = {}
@@ -314,34 +353,24 @@ class GP:
       self.params.config['objective'] = obj.neg_log_marginal_likelihood
     self.rng = None
 
-  def init_params(self, key):
+  def initialize_params(self, key):
     """Initialize params with a JAX random state."""
     if not self.dataset:
       raise ValueError('Cannot initialize GPParams without dataset.')
     logging.info(msg=f'dataset: {jax.tree_map(jnp.shape, self.dataset)}')
+
     if isinstance(self.params.config['objective'], str):
       self.params.config['objective'] = getattr(obj,
                                                 self.params.config['objective'])
-    if key is None:
-      key = jax.random.PRNGKey(0)
+    def check_param(name, param_type, params_dict=self.params.model):
+      return name in params_dict and isinstance(
+          params_dict[name], param_type)
 
-    if 'linear' in self.mean_func.__name__:
-      if 'linear_mean' in self.params.model and isinstance(
-          self.params.model['linear_mean'], flax.core.frozen_dict.FrozenDict):
-        flag = 'Retained'
-      else:
-        key, subkey = jax.random.split(key)
-        last_layer_size = self.params.config['mlp_features'][-1]
-        self.params.model['linear_mean'] = nn.Dense(1).init(
-            subkey, jnp.empty((0, last_layer_size)))['params']
-        flag = 'Initialized'
-
-      linear_mean = self.params.model['linear_mean']
-      logging.info(msg=f'{flag} linear_mean: '
-                   f'{jax.tree_map(jnp.shape, linear_mean)}')
     if 'mlp' in self.mean_func.__name__ or 'mlp' in self.cov_func.__name__:
-      if 'mlp_params' in self.params.model and isinstance(
-          self.params.model['mlp_params'], flax.core.frozen_dict.FrozenDict):
+      if not check_param('mlp_features', tuple, self.params.config):
+        self.params.config['mlp_features'] = (2 * self.input_dim,)
+      last_layer_size = self.params.config['mlp_features'][-1]
+      if check_param('mlp_params', flax.core.frozen_dict.FrozenDict):
         flag = 'Retained'
       else:
         key, subkey = jax.random.split(key)
@@ -350,6 +379,37 @@ class GP:
       mlp_params = self.params.model['mlp_params']
       logging.info(msg=f'{flag} mlp_params: '
                    f'{jax.tree_map(jnp.shape, mlp_params)}')
+    else:
+      last_layer_size = self.input_dim
+    if 'linear' in self.mean_func.__name__:
+      if check_param('linear_mean', flax.core.frozen_dict.FrozenDict):
+        flag = 'Retained'
+      else:
+        key, subkey = jax.random.split(key)
+        self.params.model['linear_mean'] = nn.Dense(1).init(
+            subkey, jnp.empty((0, last_layer_size)))['params']
+        flag = 'Initialized'
+
+      linear_mean = self.params.model['linear_mean']
+      logging.info(msg=f'{flag} linear_mean: '
+                   f'{jax.tree_map(jnp.shape, linear_mean)}')
+    if self.cov_func in [
+        kernel.dot_product_kumar, kernel.dot_product_mlp, kernel.dot_product
+    ]:
+      if check_param('dot_prod_sigma', jnp.ndarray) and check_param(
+          'dot_prod_bias', float):
+        flag = 'Retained'
+      else:
+        key, subkey = jax.random.split(key)
+        self.params.model['dot_prod_sigma'] = jax.random.normal(
+            subkey, (last_layer_size, last_layer_size * 2))
+        key, subkey = jax.random.split(key)
+        self.params.model['dot_prod_bias'] = jax.random.normal(subkey)
+        flag = 'Initialized'
+      dot_prod_sigma = self.params.model['dot_prod_sigma']
+      dot_prod_bias = self.params.model['dot_prod_bias']
+      logging.info(msg=f'{flag} dot_prod_sigma: '
+                   f'{dot_prod_sigma.shape} and dot_prod_bias: {dot_prod_bias}')
     self.rng = key
 
   def set_dataset(self, dataset: Union[List[Union[Tuple[jnp.ndarray, ...],
@@ -403,11 +463,12 @@ class GP:
     if sub_dataset_key in self.params.cache:
       self.params.cache[sub_dataset_key].needs_update = True
 
-  def train(self, key=None) -> GPParams:
+  def train(self, key=None, params_save_file=None) -> GPParams:
     """Train the GP by fitting it to the dataset.
 
     Args:
       key: Jax random state.
+      params_save_file: optional file name to save params.
 
     Returns:
       params: GPParams.
@@ -427,7 +488,8 @@ class GP:
         dataset=self.dataset,
         warp_func=self.warp_func,
         objective=self.params.config['objective'],
-        key=subkey)
+        key=subkey,
+        params_save_file=params_save_file)
     logging.info(msg=f'params = {self.params}')
     return self.params
 

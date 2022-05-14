@@ -20,6 +20,7 @@ import itertools
 import pickle
 
 from absl import logging
+from hyperbo.basics import data_utils
 from hyperbo.basics import definitions as defs
 from hyperbo.gp_utils import gp
 
@@ -28,7 +29,6 @@ import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 from tensorflow.io import gfile
-
 
 partial = functools.partial
 
@@ -434,9 +434,214 @@ def process_pd1_for_maf(outfile_path,
       num_hparams=num_hparams,
       neg_error_to_accuracy=neg_error_to_accuracy)
 
-  log_dataset(maf_dataset)
+  data_utils.log_dataset(maf_dataset)
   with gfile.Open(outfile_path, 'wb') as f:
     pickle.dump(maf_dataset, f, pickle.HIGHEST_PROTOCOL)
+
+
+  logging.info(
+      msg=f'For HPOB dataset, finite = {finite}; surrogate = {surrogate}.')
+  handler = hpob_handler.HPOBHandler(
+      root_dir=hpob.ROOT_DIR, mode='v3', surrogates_dir=hpob.SURROGATES_DIR)
+  if isinstance(search_space_index, str):
+    search_space = search_space_index
+  elif isinstance(search_space_index, int):
+    spaces = list(handler.meta_train_data.keys())
+    spaces.sort()
+    search_space = spaces[search_space_index]
+  else:
+    raise ValueError('search_space_index must be str or int.')
+  if isinstance(test_dataset_id_index, str):
+    test_dataset_id = test_dataset_id_index
+  elif isinstance(test_dataset_id_index, int):
+    test_dataset_ids = list(handler.meta_test_data[search_space].keys())
+    test_dataset_ids.sort()
+    test_dataset_id = test_dataset_ids[test_dataset_id_index]
+  else:
+    raise ValueError('test_dataset_id_index must be str or int.')
+  dataset = {}
+  if aligned:
+    dataset_id = list(handler.meta_train_data[search_space].keys())[0]
+    train_x = np.array(handler.meta_train_data[search_space][dataset_id]['X'])
+    input_dim = train_x.shape[1]
+    key, subkey = jax.random.split(key, 2)
+    train_x = sample_hpob_inputs(subkey, input_dim, wild_card_train)
+    aligned_train_y = []
+    for dataset_id in handler.meta_train_data[search_space]:
+      hpob_oracle = hpob.HPOBContainer(handler).get_experimenter(
+          search_space, dataset_id).EvaluateArray
+      train_y = hpob_oracle(train_x)
+      aligned_train_y.append(train_y)
+    aligned_train_y = jnp.array(aligned_train_y).T
+    dataset['aligned'] = SubDataset(x=train_x, y=aligned_train_y, aligned='all')
+  else:
+    for dataset_id in handler.meta_train_data[search_space]:
+      train_x = np.array(handler.meta_train_data[search_space][dataset_id]['X'])
+      if surrogate:
+        if wild_card_train:
+          input_dim = train_x.shape[1]
+          key, subkey = jax.random.split(key, 2)
+          train_x = sample_hpob_inputs(subkey, input_dim, wild_card_train)
+        hpob_oracle = hpob.HPOBContainer(handler).get_experimenter(
+            search_space, dataset_id).EvaluateArray
+        train_y = hpob_oracle(train_x)[:, None]
+      else:
+        train_y = np.array(
+            handler.meta_train_data[search_space][dataset_id]['y'])
+      dataset[dataset_id] = SubDataset(x=train_x, y=train_y)
+  if test_seed in ['test0', 'test1', 'test2', 'test3', 'test4']:
+    init_index = handler.bo_initializations[search_space][test_dataset_id][
+        test_seed]
+    test_x = np.array(
+        handler.meta_test_data[search_space][test_dataset_id]['X'])
+    test_y = np.array(
+        handler.meta_test_data[search_space][test_dataset_id]['y'])
+    if finite:
+      y_init = test_y[init_index]
+    else:
+      surrogate_name = 'surrogate-' + search_space + '-' + test_dataset_id
+      y_min = handler.surrogates_stats[surrogate_name]['y_min']
+      y_max = handler.surrogates_stats[surrogate_name]['y_max']
+      y_init = np.clip(test_y[init_index], y_min, y_max)
+    dataset[test_dataset_id] = SubDataset(x=test_x[init_index], y=y_init)
+  else:
+    test_x = np.empty((0, train_x.shape[1]))
+    test_y = np.empty((0, 1))
+  if finite:
+    return dataset, test_dataset_id, SubDataset(x=test_x, y=test_y)
+  else:
+    hpob_oracle = hpob.HPOBContainer(handler).get_experimenter(
+        search_space, test_dataset_id).EvaluateArray
+    return dataset, test_dataset_id, hpob_oracle
+
+
+def pd2(key,
+        p_observed,
+        verbose=True,
+        sub_dataset_key=None,
+        input_warp=True,
+        output_log_warp=True,
+        num_remove=0,
+        metric_name='best_valid/error_rate',
+        p_remove=0.):
+  """Load PD2(Adam) data from init2winit and pick a random study as test function.
+
+  For matched dataframes, we set `aligned` to True in its trials and reflect it
+  in its corresponding SubDataset.
+  The `aligned` value and sub-dataset key has suffix aligned_suffix, which is
+  its phase identifier.
+
+  Args:
+    key: random state for jax.random.
+    p_observed: percentage of data that is observed.
+    verbose: print info about data if True.
+    sub_dataset_key: sub_dataset name to be queried.
+    input_warp: apply warping to data if True.
+    output_log_warp: use log warping for output.
+    num_remove: number of sub-datasets to remove.
+    metric_name: name of metric.
+    p_remove: proportion of data to be removed.
+
+  Returns:
+    dataset: Dict[str, SubDataset], mapping from study group to a SubDataset.
+    sub_dataset_key: study group key for testing in dataset.
+    queried_sub_dataset: SubDataset to be queried.
+  """
+  all_trials = []
+  for k, v in PD2.items():
+    with gfile.Open(v, 'rb') as f:
+      trials = pickle.load(f)
+      trials.loc[:, 'aligned'] = (k[1] == 'matched')
+      trials.loc[:, 'aligned_suffix'] = k[0]
+      all_trials.append(trials)
+  trials = pd.concat(all_trials)
+  labels = [
+      'hps.lr_hparams.decay_steps_factor', 'hps.lr_hparams.initial_value',
+      'hps.lr_hparams.power', 'hps.opt_hparams.beta1',
+      'hps.opt_hparams.epsilon', metric_name
+  ]
+  warp_func = {}
+  if input_warp:
+    warp_func = {
+        'hps.opt_hparams.beta1': lambda x: np.log(1 - x),
+        'hps.lr_hparams.initial_value': np.log,
+        'hps.opt_hparams.epsilon': np.log,
+    }
+  if output_log_warp:
+    warp_func['best_valid/error_rate'] = lambda x: -np.log(x + 1e-10)
+
+  return process_dataframe(
+      key=key,
+      trials=trials,
+      study_identifier='study_group',
+      labels=labels,
+      p_observed=p_observed,
+      maximize_metric=False,
+      warp_func=warp_func if input_warp else None,
+      verbose=verbose,
+      sub_dataset_key=sub_dataset_key,
+      num_remove=num_remove,
+      p_remove=p_remove)
+
+
+def grid2020(key,
+             p_observed,
+             verbose=True,
+             sub_dataset_key=None,
+             input_warp=True,
+             output_log_warp=True,
+             num_remove=0,
+             p_remove=0.):
+  """Load GRID_2020 data from init2winit and pick a random study as test function.
+
+  Args:
+    key: random state for jax.random.
+    p_observed: percentage of data that is observed.
+    verbose: print info about data if True.
+    sub_dataset_key: sub_dataset name to be queried.
+    input_warp: apply warping to data if True.
+    output_log_warp: use log warping for output.
+    num_remove: number of sub-datasets to remove.
+    p_remove: proportion of data to be removed.
+
+  Returns:
+    dataset: Dict[str, SubDataset], mapping from study group to a SubDataset.
+    sub_dataset_key: study group key for testing in dataset.
+    queried_sub_dataset: SubDataset to be queried.
+  """
+  experiment_df, failed_trials = data_loader.parallel_load_trials_in_directories(
+      GRID2020, 100)
+  logging.info(msg=f'Loaded trials shape: {experiment_df.shape}'
+               f'Failed trials len: {len(failed_trials)}')
+  experiment_df = df_utils.add_best_eval_columns(
+      experiment_df, ['valid/ce_loss', 'valid/error_rate'])
+  experiment_df.loc[:, 'aligned'] = True
+  experiment_df.loc[:, 'aligned_suffix'] = ''
+  labels = [
+      'hps.opt_hparams.momentum', 'hps.lr_hparams.initial_learning_rate',
+      'hps.lr_hparams.power', 'hps.lr_hparams.decay_steps_factor',
+      'best_valid/error_rate'
+  ]
+  warp_func = {}
+  if input_warp:
+    warp_func = {
+        'hps.opt_hparams.momentum': lambda x: np.log(1 - x),
+        'hps.lr_hparams.initial_learning_rate': np.log,
+    }
+  if output_log_warp:
+    warp_func['best_valid/error_rate'] = lambda x: -np.log(x + 1e-10)
+  return process_dataframe(
+      key=key,
+      trials=experiment_df,
+      study_identifier='dataset',
+      labels=labels,
+      p_observed=p_observed,
+      maximize_metric=False,
+      warp_func=warp_func,
+      verbose=verbose,
+      sub_dataset_key=sub_dataset_key,
+      num_remove=num_remove,
+      p_remove=p_remove)
 
 
 
@@ -498,29 +703,3 @@ def random(key,
   queried_sub_dataset = SubDataset(x=x_queries, y=y_queries)
   return dataset, n_func_historical, queried_sub_dataset
 
-
-def log_dataset(dataset):
-  """Log basic facts about dataset."""
-
-  def safe(f):
-
-    def safef(x):
-      if isinstance(x, str):
-        return str
-      elif x.shape[0] == 0:
-        return jnp.nan
-      else:
-        return f(x)
-
-    return safef
-
-  logging.info(msg=f'dataset len = {len(dataset)}.')
-  logging.info(msg='dataset shape: ' f'{jax.tree_map(jnp.shape, dataset)}')
-  logging.info(msg='dataset mean: '
-               f'{jax.tree_map(safe(partial(jnp.mean, axis=0)), dataset)}')
-  logging.info(msg='dataset median: '
-               f'{jax.tree_map(safe(partial(jnp.median, axis=0)), dataset)}')
-  logging.info(msg='dataset min: '
-               f'{jax.tree_map(safe(partial(jnp.min, axis=0)), dataset)}')
-  logging.info(msg='dataset max: '
-               f'{jax.tree_map(safe(partial(jnp.max, axis=0)), dataset)}')

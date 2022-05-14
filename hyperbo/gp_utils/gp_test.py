@@ -46,18 +46,16 @@ class GPTest(parameterized.TestCase):
   """Tests for gp.py."""
 
   @parameterized.named_parameters(
-      ('squared_exponential GP.train', kernel.squared_exponential, True),
-      ('matern32 GP.train', kernel.matern32, True),
-      ('matern52 GP.train', kernel.matern52, True),
-      ('squared_exponential infer_parameters', kernel.squared_exponential,
-       False),
-      ('matern32 infer_parameters', kernel.matern32, False),
-      ('matern52 infer_parameters', kernel.matern52, False),
-      ('squared_exponential_mlp GP.train', kernel.squared_exponential_mlp,
-       True),
-      ('dot_product_mlp infer_parameters', kernel.dot_product_mlp, False),
+      ('squared_exponential GP.train', kernel.squared_exponential),
+      ('matern32 GP.train', kernel.matern32),
+      ('matern52 GP.train', kernel.matern52),
+      ('squared_exponential infer_parameters', kernel.squared_exponential),
+      ('matern32 infer_parameters', kernel.matern32),
+      ('matern52 infer_parameters', kernel.matern52),
+      ('squared_exponential_mlp GP.train', kernel.squared_exponential_mlp),
+      ('dot_product_mlp infer_parameters', kernel.dot_product_mlp),
   )
-  def test_infer_parameters(self, cov_func, use_gp_class):
+  def test_infer_parameters(self, cov_func):
     """Test that GP parameters can be inferred correctly."""
     key = jax.random.PRNGKey(0)
     key, init_key = jax.random.split(key)
@@ -109,41 +107,34 @@ class GPTest(parameterized.TestCase):
             'noise_variance': -4.
         })
     if cov_func == kernel.squared_exponential_mlp:
-      init_params.config['mlp_features'] = (8,)
-      bf.init_mlp_with_shape(init_key, init_params, vx.shape)
+      init_params.config['mlp_features'] = None
     elif cov_func == kernel.dot_product_mlp:
-      init_params.model['dot_prod_sigma'] = jax.random.normal(
-          init_key, (8, 8 * 2))
+      init_params.model['dot_prod_sigma'] = None
       init_params.model['dot_prod_bias'] = 0.
-      init_params.config['mlp_features'] = (8,)
-      bf.init_mlp_with_shape(init_key, init_params, vx.shape)
+      init_params.config['mlp_features'] = None
 
     warp_func = DEFAULT_WARP_FUNC
-    init_nll = nll_func(init_params, warp_func)
-    logging.info(msg=f'NLL on init params = {init_nll}')
 
     start_time = time.time()
-    if use_gp_class:
-      init_params.config.update({
-          'method': 'adam',
-          'learning_rate': 1e-5,
-          'beta': 0.9,
-          'maxiter': 1,
-      })
-      logging.info(msg=f'init_params={init_params}')
-      model = gp.GP(
-          dataset=dataset,
-          mean_func=mean_func,
-          cov_func=cov_func,
-          params=init_params,
-          warp_func=warp_func)
-      inferred_params = model.train()
-    else:
-      init_params.config.update({'method': 'lbfgs', 'maxiter': 1})
-      logging.info(msg=f'init_params={init_params}')
-
-      inferred_params = gp.infer_parameters(
-          mean_func, cov_func, init_params, dict_dataset, warp_func=warp_func)
+    init_params.config.update({
+        'method': 'adam',
+        'learning_rate': 1e-5,
+        'beta': 0.9,
+        'maxiter': 1,
+        'logging_interval': 1,
+        'batch_size': 100,
+    })
+    model = gp.GP(
+        dataset=dataset,
+        mean_func=mean_func,
+        cov_func=cov_func,
+        params=init_params,
+        warp_func=warp_func)
+    model.initialize_params(init_key)
+    init_nll = nll_func(init_params, warp_func)
+    logging.info(msg=f'init_params={model.params}')
+    logging.info(msg=f'NLL on init params = {init_nll}')
+    inferred_params = model.train()
     logging.info(msg=f'Elapsed training time = {time.time() - start_time}')
 
     keys = params.model.keys()

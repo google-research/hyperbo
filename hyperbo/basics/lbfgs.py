@@ -194,7 +194,8 @@ def lbfgs(fn,
           args=tuple(),
           has_aux=False,
           val_and_grad_fn=None,
-          state=None):
+          state=None,
+          callback=None):
   """Optimize a function with the lbfgs algorithm.
 
     This implementation allows for dictionaries of parameters and the
@@ -224,6 +225,7 @@ def lbfgs(fn,
     state: A list or tuple containing internal state of the optimizer, to be
       passed in if this is called multiple times in a row to maintain the
       Hessian estimate.
+    callback: an optional callback function.
 
   Returns:
     params: A new set of parameters corresponding to the result of the
@@ -332,7 +334,8 @@ def lbfgs(fn,
 
       params = jax.tree_multimap(lambda a, b: a + b * step_size, params,
                                  descent_dir)
-
+      if callback is not None:
+        callback(step=i, model_params=params, loss=new_val)
     else:
       new_val = val
       logging.info("LBFGS terminating due to instability.")

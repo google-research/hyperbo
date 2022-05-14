@@ -14,7 +14,6 @@
 # limitations under the License.
 
 """Objective functions for training a GP."""
-import collections
 import functools
 import logging
 
@@ -24,68 +23,6 @@ from hyperbo.gp_utils import utils
 import jax.numpy as jnp
 
 retrieve_params = params_utils.retrieve_params
-
-
-def sample_mean_cov_regularizer_split_data(
-    mean_func,
-    cov_func,
-    params,
-    dataset,
-    warp_func=None,
-    distance=utils.kl_multivariate_normal):
-  """Compute a regularizer on sample mean and sample covariance.
-
-  The returned regularizer aims to minimize the distance between the
-  multivariate normal specified by sample mean/covariance and the multivariate
-  normal specified by the parameterized GP. We support KL divergence as distance
-  or squared Euclidean distance.
-
-  Args:
-    mean_func: mean function handle that maps from (params, n x d input,
-      warp_func) to an n dimensional mean vector. (see vector_map in mean.py for
-      more details).
-    cov_func: covariance function handle that maps from (params, n1 x d input1,
-      n2 x d input2, wrap_func) to a n1 x n2  covariance matrix (see matrix_map
-      in kernel.py for more details).
-    params: parameters for covariance, mean, and noise variance.
-    dataset: Dict[Union[int, str], SubDataset], a dictionary mapping from key to
-      SubDataset. For aligned sub-dataset, this function should only be used if
-      each aligned sub-dataset only has (?, 1) for y shape.
-    warp_func: optional dictionary that specifies the warping function for each
-      parameter.
-    distance: distance function; currently support utils.kl_multivariate_normal
-      or utils.euclidean_multivariate_normal.
-
-  Returns:
-    Weighted l2 regularizer on sample mean and sample covariance.
-  """
-
-  def compute_regularizer_dataset_subset(keys):
-    """Compute the regularizer on a subset of dataset keys."""
-    if dataset[keys[0]].x.shape[0] == 0:
-      return 0.
-    ydata = jnp.array([dataset[k].y.flatten() for k in keys])
-    xdata = dataset[keys[0]].x
-    mu_data = jnp.mean(ydata, axis=0)
-    cov_data = jnp.cov(ydata.T)
-    mu_model = mean_func(params, xdata, warp_func=warp_func).flatten()
-    noise_variance, = retrieve_params(
-        params, ['noise_variance'], warp_func=warp_func)
-    cov_model = cov_func(
-        params, xdata,
-        warp_func=warp_func) + jnp.eye(len(xdata)) * noise_variance
-
-    return distance(mu0=mu_data, cov0=cov_data, mu1=mu_model, cov1=cov_model)
-
-  aligned_id2keys = collections.defaultdict(list)
-  for key, subdataset in dataset.items():
-    if subdataset.aligned is not None:
-      aligned_id2keys[subdataset.aligned].append(key)
-  return jnp.sum(
-      jnp.array([
-          compute_regularizer_dataset_subset(keys)
-          for keys in aligned_id2keys.values()
-      ]))
 
 
 def sample_mean_cov_regularizer(mean_func,

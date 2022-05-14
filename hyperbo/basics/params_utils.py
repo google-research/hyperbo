@@ -22,9 +22,9 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 from hyperbo.basics import definitions as defs
 import jax
+import ml_collections
 
 from tensorflow.io import gfile
-
 
 GPParams = defs.GPParams
 
@@ -41,8 +41,7 @@ def save_params(filenm: str, params: Union[GPParams, Dict[str, Any]]):
     pickle.dump(params, f)
 
 
-def load_params(filenm: str,
-                use_gpparams: bool = True) -> Any:
+def load_params(filenm: str, use_gpparams: bool = True) -> Any:
   """Load from file."""
   if not gfile.Exists(filenm):
     msg = f'{filenm} does not exist.'
@@ -64,19 +63,61 @@ def _verify_params(model_params: Dict[str, Any], expected_keys: List[str]):
                      f'but received {sorted(model_params.keys())}.')
 
 
-def retrieve_params(params: GPParams,
-                    keys: List[str],
-                    warp_func: Optional[Dict[str, Callable[[Any], Any]]] = None,
-                    is_gpparams: Optional[bool] = True) -> List[Any]:
+def retrieve_params(
+    params: GPParams,
+    keys: List[str],
+    warp_func: Optional[Dict[str, Callable[[Any], Any]]] = None) -> List[Any]:
   """Returns a list of parameter values (warped if specified) by keys' order."""
-  if is_gpparams:
-    params = params.model
-  _verify_params(params, keys)
+  model_params = params.model
+  _verify_params(model_params, keys)
   if warp_func:
     values = [
-        warp_func[key](params[key]) if key in warp_func else params[key]
-        for key in keys
+        warp_func[key](model_params[key])
+        if key in warp_func else model_params[key] for key in keys
     ]
   else:
-    values = [params[key] for key in keys]
+    values = [model_params[key] for key in keys]
   return values
+
+
+def encode_model_filename(config: ml_collections.ConfigDict):
+  """Encode a config into a model filename.
+
+  Args:
+    config: ml_collections.ConfigDict.
+
+  Returns:
+    file name string.
+  """
+  model_key = '-'.join(
+      (config.search_space_index, str(config.seed), config.mean_func_name,
+       config.cov_func_name, config.init_params.config['method'],
+       ))
+  if isinstance(config.init_params.config['mlp_features'], tuple):
+    model_key = '-'.join(
+        (model_key, str(config.init_params.config['mlp_features'])))
+  if config.use_surrogate_train:
+    model_key = '-'.join(
+        (model_key, 'use_surrogate_train'))
+  if config.wild_card_train:
+    model_key = '-'.join(
+        (model_key, f'wild_card_train={config.wild_card_train}'))
+  return os.path.join(config.model_dir, model_key + '.pkl')
+
+
+def log_params_loss(step: int,
+                    params: GPParams,
+                    loss: float,
+                    warp_func: Optional[Dict[str, Callable[[Any], Any]]] = None,
+                    params_save_file: Optional[str] = None):
+  """Log intermediate information of params and nll during training."""
+  model_params = params.model
+  keys = list(model_params.keys())
+  retrieved_params = dict(
+      zip(keys, retrieve_params(params, keys, warp_func=warp_func)))
+  if params_save_file is not None:
+    save_params(params_save_file, params)
+  logging.log(
+      msg=f'iter={step}, loss={loss}, '
+      f'params.model after warping={retrieved_params}',
+      level=logging.INFO)

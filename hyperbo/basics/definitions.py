@@ -32,7 +32,7 @@ class SubDataset(NamedTuple):
   """Sub dataset with x: n x d and y: n x m; d, m>=1."""
   x: jnp.ndarray
   y: jnp.ndarray
-  aligned: Optional[Union[int, str, Tuple[str, ...]]] = None
+  aligned: Optional[Union[int, str, bool, Tuple[str, ...]]] = None
 
 
 @dataclasses.dataclass

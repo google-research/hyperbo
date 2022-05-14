@@ -19,7 +19,6 @@ import logging
 
 from hyperbo.basics import definitions as defs
 from hyperbo.basics import linalg
-from hyperbo.basics import params_utils
 import jax
 import jax.numpy as jnp
 
@@ -34,29 +33,28 @@ identity_warp = lambda x: x
 softplus_warp = jax.nn.softplus
 
 
-def sub_sample_dataset_iterator(dataset, batch_size=100, key=None):
+def sub_sample_dataset_iterator(key, dataset, batch_size):
   """Iterator for subsample a dataset such that each sub_dataset has at most batch_size data points.
 
   Args:
+    key: Jax random state.
     dataset: dict of SubDataset.
     batch_size: int, maximum number of data points per sub dataset in a batch.
-    key: Jax random state.
 
   Yields:
     A sub sampled dataset batch.
   """
-  if key is None:
-    key = jax.random.PRNGKey(0)
-    logging.info('Using default random state in sub_sample_dataset.')
   while True:
     sub_sampled_dataset = {}
     for sub_dataset_key, sub_dataset in dataset.items():
       if sub_dataset.x.shape[0] >= batch_size:
         key, subkey = jax.random.split(key, 2)
         indices = jax.random.permutation(subkey, sub_dataset.x.shape[0])
+        ifaligned = sub_dataset.aligned
         sub_sampled_dataset[sub_dataset_key] = SubDataset(
             x=sub_dataset.x[indices[:batch_size], :],
-            y=sub_dataset.y[indices[:batch_size], :])
+            y=sub_dataset.y[indices[:batch_size], :],
+            aligned=ifaligned)
       else:
         sub_sampled_dataset[sub_dataset_key] = sub_dataset
     yield sub_sampled_dataset
@@ -176,17 +174,3 @@ def euclidean_multivariate_normal(mu0,
   mean_diff = linalg.safe_l2norm(mu0 - mu1)
   cov_diff = linalg.safe_l2norm((cov0 - cov1).flatten())
   return mean_weight * mean_diff + cov_weight * cov_diff
-
-
-def log_params_loss(step, model_params, loss, warp_func=None):
-  """Log intermediate information of params and nll during training."""
-  keys = model_params.keys()
-  retrieved_params = dict(
-      zip(
-          keys,
-          params_utils.retrieve_params(
-              model_params, keys, warp_func=warp_func, is_gpparams=False)))
-  logging.log(
-      msg=f'iter={step}, loss={loss}, params.model before warping={model_params}, '
-      f'params.model after warping={retrieved_params}',
-      level=logging.INFO)

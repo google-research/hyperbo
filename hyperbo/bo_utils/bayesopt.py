@@ -146,7 +146,8 @@ def run_synthetic(dataset,
                   method='hyperbo',
                   init_model=False,
                   finite_search_space=True,
-                  data_loader_name=''):
+                  data_loader_name='',
+                  params_save_file=None):
   """Running bayesopt experiment with synthetic data.
 
   Args:
@@ -171,6 +172,7 @@ def run_synthetic(dataset,
     init_model: to initialize model if True; otherwise False.
     finite_search_space: use a finite search space if True; otherwise False.
     data_loader_name: data loader name, e.g. pd1, hpob.
+    params_save_file: optional file name to save params.
 
   Returns:
     All observations in (x, y) pairs returned by the bayesopt strategy and all
@@ -195,10 +197,13 @@ def run_synthetic(dataset,
       cov_func=cov_func,
       params=init_params,
       warp_func=warp_func)
+  key = init_random_key
   if init_model:
-    model.init_params(init_random_key)
+    key, subkey = jax.random.split(key)
+    model.initialize_params(subkey)
     # Infer GP parameters.
-    model.train()
+    key, subkey = jax.random.split(key)
+    model.train(subkey, params_save_file)
   if finite_search_space:
     sub_dataset = simulated_bayesopt(
         model=model,
@@ -210,7 +215,7 @@ def run_synthetic(dataset,
             sub_dataset.y), (queried_sub_dataset.x,
                              queried_sub_dataset.y), model.params.__dict__
   else:
-    _, sample_key = jax.random.split(init_random_key)
+    _, sample_key = jax.random.split(key)
     sub_dataset = bayesopt(
         key=sample_key,
         model=model,
