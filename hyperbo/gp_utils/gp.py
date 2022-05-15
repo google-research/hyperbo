@@ -124,19 +124,16 @@ def infer_parameters(mean_func,
     dataset_iter = data_utils.sub_sample_dataset_iterator(
         subkey, dataset, batch_size)
     model_param = params.model
-    best_model_param = model_param
-    best_loss = jnp.finfo(float).max
-    for i in range(maxiter + 1):
+    for i in range(maxiter):
       batch = next(dataset_iter)
       current_loss, grads = jax.value_and_grad(loss_func)(model_param, batch)
-      if best_loss > current_loss:
-        best_loss = current_loss
-        best_model_param = model_param
-      if i > maxiter:
+      if jnp.isfinite(current_loss):
+        params.model = model_param
+      else:
+        logging.info(msg=f'{method} stopped due to instability.')
         break
       updates, opt_state = optimizer.update(grads, opt_state)
       model_param = optax.apply_updates(model_param, updates)
-      params.model = model_param
       if i % logging_interval == 0:
         params_utils.log_params_loss(
             step=i,
@@ -144,7 +141,8 @@ def infer_parameters(mean_func,
             loss=current_loss,
             warp_func=warp_func,
             params_save_file=params_save_file)
-    params.model = best_model_param
+    if jnp.isfinite(current_loss):
+      params.model = model_param
     params_utils.log_params_loss(
         step=maxiter,
         params=params,
@@ -152,7 +150,6 @@ def infer_parameters(mean_func,
         warp_func=warp_func,
         params_save_file=params_save_file)
   else:
-
     @jit
     def loss_func(model_params):
       return objective(

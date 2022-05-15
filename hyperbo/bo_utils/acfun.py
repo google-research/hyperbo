@@ -14,6 +14,7 @@
 # limitations under the License.
 
 """Acquisition functions for Bayesian optimization."""
+import functools
 from typing import Any, Callable, Union
 
 from hyperbo.gp_utils import gp
@@ -21,6 +22,8 @@ import jax.numpy as jnp
 import jax.random as jrd
 import jax.scipy as jsp
 import numpy as np
+
+partial = functools.partial
 
 
 def random_search(x_queries, **unused_kwargs):
@@ -164,6 +167,12 @@ probability_of_improvement = acfun_wrapper(
     acfun_callback_default=pi_callback_default)
 
 pi = probability_of_improvement
+pi2 = acfun_wrapper(
+    acfun_sub=probability_of_improvement_sub,
+    acfun_callback_default=partial(pi_callback_default, use_std=True))
+pi3 = acfun_wrapper(
+    acfun_sub=probability_of_improvement_sub,
+    acfun_callback_default=partial(pi_callback_default, zeta=0.05))
 
 ucb4 = acfun_wrapper(acfun_sub=ucb_sub, acfun_callback_default=lambda a, b: 4.)
 ucb3 = acfun_wrapper(acfun_sub=ucb_sub, acfun_callback_default=lambda a, b: 3.)

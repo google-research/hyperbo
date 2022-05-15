@@ -68,8 +68,6 @@ def sub_sample_dataset_iterator(key, dataset, batch_size):
     sub_sampled_dataset = {}
     for i, (sub_dataset_key, sub_dataset) in enumerate(dataset.items()):
       if sub_dataset.x.shape[0] >= batch_size:
-        logging.info(
-            msg=f'Generating subsampled subdataset for {sub_dataset_key}.')
         key, subkey = jax.random.split(key, 2)
         indices = jax.random.permutation(subkey, sub_dataset.x.shape[0])
         new_sub_dataset = SubDataset(
@@ -77,12 +75,10 @@ def sub_sample_dataset_iterator(key, dataset, batch_size):
             y=sub_dataset.y[indices[:batch_size], :],
             aligned=sub_dataset.aligned)
       else:
-        logging.info(msg=f'Retaining subdataset for {sub_dataset_key}.')
         new_sub_dataset = sub_dataset
       if isinstance(new_sub_dataset.aligned, str):
         # We have to do this because str is not a Jax supported type.
         new_sub_dataset = SubDataset(
             x=new_sub_dataset.x, y=new_sub_dataset.y, aligned=i)
       sub_sampled_dataset[sub_dataset_key] = new_sub_dataset
-    log_dataset(sub_sampled_dataset)
     yield sub_sampled_dataset
