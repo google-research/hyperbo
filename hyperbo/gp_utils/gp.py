@@ -141,6 +141,7 @@ def infer_parameters(mean_func,
             loss=current_loss,
             warp_func=warp_func,
             params_save_file=params_save_file)
+    current_loss = loss_func(model_param, batch)
     if jnp.isfinite(current_loss):
       params.model = model_param
     params_utils.log_params_loss(

@@ -102,6 +102,12 @@ def encode_model_filename(config: ml_collections.ConfigDict):
   if config.wild_card_train:
     model_key = '-'.join(
         (model_key, f'wild_card_train={config.wild_card_train}'))
+  if config.normalize_y:
+    model_key = '-'.join(
+        (model_key, 'normalize_y'))
+  if config.output_log_warp:
+    model_key = '-'.join(
+        (model_key, 'output_log_warp'))
   return os.path.join(config.model_dir, model_key + '.pkl')
 
 

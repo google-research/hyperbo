@@ -193,7 +193,7 @@ def process_dataframe(
     maximize_metric: a boolean indicating if higher values of the eval metric
       are better or not. If maximize_metric is False and there is no warping for
       the output label, we negate all outputs.
-    warp_func: mapping from label names to warpping functions.
+    warp_func: mapping from label names to warping functions.
     verbose: print info about data if True.
     sub_dataset_key: sub_dataset name to be queried.
     num_remove: number of sub-datasets to remove.
@@ -460,6 +460,16 @@ def process_pd1_for_maf(outfile_path,
   else:
     raise ValueError('test_dataset_id_index must be str or int.')
   dataset = {}
+  hpob_container = hpob.HPOBContainer(handler, normalize_y=normalize_y)
+  if output_log_warp:
+    def output_warping(f):
+      def warpped_f(x_array):
+        y = f(x_array)
+        assert np.all(y <= 1.), 'Use output_log_warp only if y <= 1.'
+        return -np.log(1. + 1e-10 - y)
+      return warpped_f
+  else:
+    output_warping = lambda f: f
   if aligned:
     dataset_id = list(handler.meta_train_data[search_space].keys())[0]
     train_x = np.array(handler.meta_train_data[search_space][dataset_id]['X'])
@@ -468,8 +478,8 @@ def process_pd1_for_maf(outfile_path,
     train_x = sample_hpob_inputs(subkey, input_dim, wild_card_train)
     aligned_train_y = []
     for dataset_id in handler.meta_train_data[search_space]:
-      hpob_oracle = hpob.HPOBContainer(handler).get_experimenter(
-          search_space, dataset_id).EvaluateArray
+      hpob_oracle = output_warping(hpob_container.get_experimenter(
+          search_space, dataset_id).EvaluateArray)
       train_y = hpob_oracle(train_x)
       aligned_train_y.append(train_y)
     aligned_train_y = jnp.array(aligned_train_y).T
@@ -482,27 +492,37 @@ def process_pd1_for_maf(outfile_path,
           input_dim = train_x.shape[1]
           key, subkey = jax.random.split(key, 2)
           train_x = sample_hpob_inputs(subkey, input_dim, wild_card_train)
-        hpob_oracle = hpob.HPOBContainer(handler).get_experimenter(
-            search_space, dataset_id).EvaluateArray
+        hpob_oracle = output_warping(hpob_container.get_experimenter(
+            search_space, dataset_id).EvaluateArray)
         train_y = hpob_oracle(train_x)[:, None]
       else:
         train_y = np.array(
             handler.meta_train_data[search_space][dataset_id]['y'])
       dataset[dataset_id] = SubDataset(x=train_x, y=train_y)
   if test_seed in ['test0', 'test1', 'test2', 'test3', 'test4']:
+    test_experimenter = hpob_container.get_experimenter(
+        search_space, test_dataset_id)
     init_index = handler.bo_initializations[search_space][test_dataset_id][
         test_seed]
     test_x = np.array(
         handler.meta_test_data[search_space][test_dataset_id]['X'])
     test_y = np.array(
         handler.meta_test_data[search_space][test_dataset_id]['y'])
-    if finite:
-      y_init = test_y[init_index]
-    else:
+    # Currently we use clipped init y for test even if surrogate is True.
+    # surrogate is True iff using surrogate for training.
+    if normalize_y:
+      # if normalize_y is True, normalize init y without surrogate.
+      test_y = test_experimenter.normalize_ys(test_y)
+    if output_log_warp:
+      # if output_log_warp is True, warp the clipped init y without surrogate.
+      test_y_warping = output_warping(lambda x: x)
+      test_y = test_y_warping(test_y)
+    y_init = test_y[init_index]
+    if not finite:
       surrogate_name = 'surrogate-' + search_space + '-' + test_dataset_id
       y_min = handler.surrogates_stats[surrogate_name]['y_min']
       y_max = handler.surrogates_stats[surrogate_name]['y_max']
-      y_init = np.clip(test_y[init_index], y_min, y_max)
+      y_init = np.clip(y_init, y_min, y_max)
     dataset[test_dataset_id] = SubDataset(x=test_x[init_index], y=y_init)
   else:
     test_x = np.empty((0, train_x.shape[1]))
@@ -510,8 +530,7 @@ def process_pd1_for_maf(outfile_path,
   if finite:
     return dataset, test_dataset_id, SubDataset(x=test_x, y=test_y)
   else:
-    hpob_oracle = hpob.HPOBContainer(handler).get_experimenter(
-        search_space, test_dataset_id).EvaluateArray
+    hpob_oracle = output_warping(test_experimenter.EvaluateArray)
     return dataset, test_dataset_id, hpob_oracle
 
 
