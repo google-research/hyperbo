@@ -465,8 +465,11 @@ def process_pd1_for_maf(outfile_path,
     def output_warping(f):
       def warpped_f(x_array):
         y = f(x_array)
-        assert np.all(y <= 1.), 'Use output_log_warp only if y <= 1.'
-        return -np.log(1. + 1e-10 - y)
+        assert np.all(y <= 1. + 1e-11), (f'Use output_log_warp only if y={y} '
+                                         'is smaller than or equal to 1.')
+        ret = -np.log(1. + 1e-6 - y)
+        assert np.all(np.isfinite(ret)), (f'y={y} caused ret={ret}.')
+        return ret
       return warpped_f
   else:
     output_warping = lambda f: f
@@ -721,4 +724,3 @@ def random(key,
   dataset[n_func_historical] = SubDataset(x=x_observed, y=y_observed)
   queried_sub_dataset = SubDataset(x=x_queries, y=y_queries)
   return dataset, n_func_historical, queried_sub_dataset
-

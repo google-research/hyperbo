@@ -19,7 +19,6 @@ import os
 
 from hyperbo.basics import params_utils
 import utils  # local file import
-from init2winit.utils import run_in_parallel
 import numpy as np
 # For backward compatibility
 plot_all = utils.plot_all
@@ -108,6 +107,9 @@ def get_results(directory, n, verbose=False, process_func=get_exp_result):
     a dictionary mapping from the first returned item of process_func to the
     second returned item of process_func.
   """
+  # pylint: disable=g-bad-import-order,g-import-not-at-top
+  from init2winit.utils import run_in_parallel
+  # pylint: enable=g-bad-import-order,g-import-not-at-top
   kwarg_list = []
   for i in range(n):
     kwarg = {
@@ -251,7 +253,10 @@ def analyze_results(res, percentile=20, error_rate=True, maxiter=100):
   return workload2result
 
 
-def compute_workload2ref(workload2result, methods, trial=100):
+def compute_workload2ref(workload2result,
+                         methods,
+                         trial=100,
+                         ref_metric='median'):
   """Compute reference metric values for each workload.
 
   We can use the following two options for performance profile figures:
@@ -265,6 +270,9 @@ def compute_workload2ref(workload2result, methods, trial=100):
       metrics.
     methods: list of method strings to compute the reference.
     trial: trial at which we compute the reference.
+    ref_metric: the metric to set the reference value for each task. If
+      ref_metric is 'median', we set it to be the best median value across all
+      methods.
 
   Returns:
     dict mapping from workoad to reference metrics.
@@ -275,27 +283,26 @@ def compute_workload2ref(workload2result, methods, trial=100):
     for method in methods:
       y_arrays += workload2result[wl][method]
     y_arrays = np.array(y_arrays)[:, :trial]
-    workload2ref[wl] = np.median(np.amin(y_arrays, 1))
+    if ref_metric == 'median':
+      workload2ref[wl] = np.median(np.amin(y_arrays, 1))
+    elif ref_metric == 'mean':
+      workload2ref[wl] = np.mean(np.amin(y_arrays, 1))
+    elif isinstance(ref_metric, float):
+      workload2ref[wl] = ref_metric * min(y_arrays.flatten())
   return workload2ref
 
 
-def get_method2fraction(workload2result, workload2ref):
+def get_method2fraction(workload2result, workload2ref, bo_iters=100):
   """Compute dict mapping from method to fraction."""
-  method2fraction = collections.defaultdict(lambda: np.zeros(100))
+  method2fraction = collections.defaultdict(lambda: np.zeros(bo_iters))
   total = collections.defaultdict(lambda: 0)
   for wl in workload2result:
     for method, result in workload2result[wl].items():
       for yy in result:
-        assert len(yy) == 100
         total[method] += 1
         for i in range(len(yy)):
           method2fraction[method][i] += 1 if min(
-              yy[:i + 1]) <= workload2ref[wl] else 0
-  for method in total:
-    if method not in ['maf', 'MAF']:
-      assert total[method] == 115
-    else:
-      print(method, total[method])
+              yy[:i + 1]) <= workload2ref[wl]+1e-6 else 0
   for method in method2fraction:
     method2fraction[method] = method2fraction[method] / total[method]
   return method2fraction
