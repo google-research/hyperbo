@@ -41,6 +41,9 @@ PD1 = {
     ('phase1', 'unmatched'): '../pd1/pd1_unmatched_phase1_results.jsonl',
 }
 
+HPOB_ROOT_DIR = 'hpob-data/'
+
+
 
 def get_aligned_dataset(trials, study_identifier, labels, verbose=True):
   """Get aligned dataset from processed trials from get_dataset.
@@ -352,8 +355,8 @@ def _normalize_maf_dataset(maf_dataset, num_hparams, neg_error_to_accuracy):
   """Project the hparam values to [0, 1], and optionally convert y values.
 
   Args:
-    maf_dataset: a dictionary of the format
-      `{subdataset_name: {"X": ..., "Y":...}}`.
+    maf_dataset: a dictionary of the format `{subdataset_name: {"X": ...,
+      "Y":...}}`.
     num_hparams: the number of different hyperparameters being optimized.
     neg_error_to_accuracy: whether to transform y values that correspond to
       negative error rates to accuracy values.
@@ -439,10 +442,55 @@ def process_pd1_for_maf(outfile_path,
     pickle.dump(maf_dataset, f, pickle.HIGHEST_PROTOCOL)
 
 
-  logging.info(
-      msg=f'For HPOB dataset, finite = {finite}; surrogate = {surrogate}.')
-  handler = hpob_handler.HPOBHandler(
-      root_dir=hpob.ROOT_DIR, mode='v3', surrogates_dir=hpob.SURROGATES_DIR)
+def get_output_warper(output_log_warp=True, return_warping=False):
+  """Returns an output warper with the option to use -log on 1-y."""
+  if output_log_warp:
+
+    def output_warping(f):
+
+      def warpped_f(x_array):
+        y = f(x_array)
+        if not np.all(y <= 1. + 1e-11):
+          raise ValueError(f'Use output_log_warp only if f({x_array})={y} '
+                           'is smaller than or equal to 1.')
+        ret = -np.log(1. + 1e-6 - y)
+        assert np.all(np.isfinite(ret)), (f'y={y} caused ret={ret}.')
+        return ret
+
+      return warpped_f
+  else:
+    output_warping = lambda f: f
+  output_warper = output_warping(lambda x: x)
+  if return_warping:
+    return output_warper, output_warping
+  return output_warper
+
+
+def hpob_dataset(search_space_index,
+                 test_dataset_id_index,
+                 test_seed,
+                 output_log_warp=True):
+  """Load the original finite hpob dataset by search space and test dataset id.
+
+  To use the HPO-B dataset, download data and import hpob_handler from
+    https://github.com/releaunifreiburg/HPO-B.
+
+  Args:
+    search_space_index: int index or string of a search space.
+    test_dataset_id_index: int index or string of test dataset.
+    test_seed: Identifier of the seed for the evaluation. Options: test0, test1,
+      test2, test3, test4.
+    output_log_warp: log warp on output with max assumed to be 1.
+
+  Returns:
+    dataset: Dict[str, SubDataset], mapping from study group to a SubDataset.
+    sub_dataset_key: study group key for testing in dataset.
+    queried_sub_dataset: SubDataset to be queried.
+  """
+  # pylint: disable=g-bad-import-order,g-import-not-at-top
+  from hpob import hpob_handler
+  # pylint: enable=g-bad-import-order,g-import-not-at-top
+  handler = hpob_handler.HPOBHandler(root_dir=HPOB_ROOT_DIR, mode='v3')
   if isinstance(search_space_index, str):
     search_space = search_space_index
   elif isinstance(search_space_index, int):
@@ -460,210 +508,29 @@ def process_pd1_for_maf(outfile_path,
   else:
     raise ValueError('test_dataset_id_index must be str or int.')
   dataset = {}
-  hpob_container = hpob.HPOBContainer(handler, normalize_y=normalize_y)
-  if output_log_warp:
-    def output_warping(f):
-      def warpped_f(x_array):
-        y = f(x_array)
-        assert np.all(y <= 1. + 1e-11), (f'Use output_log_warp only if y={y} '
-                                         'is smaller than or equal to 1.')
-        ret = -np.log(1. + 1e-6 - y)
-        assert np.all(np.isfinite(ret)), (f'y={y} caused ret={ret}.')
-        return ret
-      return warpped_f
-  else:
-    output_warping = lambda f: f
-  if aligned:
-    dataset_id = list(handler.meta_train_data[search_space].keys())[0]
+  output_warper = get_output_warper(output_log_warp)
+
+  for dataset_id in handler.meta_train_data[search_space]:
     train_x = np.array(handler.meta_train_data[search_space][dataset_id]['X'])
-    input_dim = train_x.shape[1]
-    key, subkey = jax.random.split(key, 2)
-    train_x = sample_hpob_inputs(subkey, input_dim, wild_card_train)
-    aligned_train_y = []
-    for dataset_id in handler.meta_train_data[search_space]:
-      hpob_oracle = output_warping(hpob_container.get_experimenter(
-          search_space, dataset_id).EvaluateArray)
-      train_y = hpob_oracle(train_x)
-      aligned_train_y.append(train_y)
-    aligned_train_y = jnp.array(aligned_train_y).T
-    dataset['aligned'] = SubDataset(x=train_x, y=aligned_train_y, aligned='all')
-  else:
-    for dataset_id in handler.meta_train_data[search_space]:
-      train_x = np.array(handler.meta_train_data[search_space][dataset_id]['X'])
-      if surrogate:
-        if wild_card_train:
-          input_dim = train_x.shape[1]
-          key, subkey = jax.random.split(key, 2)
-          train_x = sample_hpob_inputs(subkey, input_dim, wild_card_train)
-        hpob_oracle = output_warping(hpob_container.get_experimenter(
-            search_space, dataset_id).EvaluateArray)
-        train_y = hpob_oracle(train_x)[:, None]
-      else:
-        train_y = np.array(
-            handler.meta_train_data[search_space][dataset_id]['y'])
-      dataset[dataset_id] = SubDataset(x=train_x, y=train_y)
+    train_y = np.array(handler.meta_train_data[search_space][dataset_id]['y'])
+    train_y = output_warper(train_y)
+    dataset[dataset_id] = SubDataset(x=train_x, y=train_y)
   if test_seed in ['test0', 'test1', 'test2', 'test3', 'test4']:
-    test_experimenter = hpob_container.get_experimenter(
-        search_space, test_dataset_id)
     init_index = handler.bo_initializations[search_space][test_dataset_id][
         test_seed]
     test_x = np.array(
         handler.meta_test_data[search_space][test_dataset_id]['X'])
     test_y = np.array(
         handler.meta_test_data[search_space][test_dataset_id]['y'])
-    # Currently we use clipped init y for test even if surrogate is True.
-    # surrogate is True iff using surrogate for training.
-    if normalize_y:
-      # if normalize_y is True, normalize init y without surrogate.
-      test_y = test_experimenter.normalize_ys(test_y)
     if output_log_warp:
       # if output_log_warp is True, warp the clipped init y without surrogate.
-      test_y_warping = output_warping(lambda x: x)
-      test_y = test_y_warping(test_y)
-    y_init = test_y[init_index]
-    if not finite:
-      surrogate_name = 'surrogate-' + search_space + '-' + test_dataset_id
-      y_min = handler.surrogates_stats[surrogate_name]['y_min']
-      y_max = handler.surrogates_stats[surrogate_name]['y_max']
-      y_init = np.clip(y_init, y_min, y_max)
-    dataset[test_dataset_id] = SubDataset(x=test_x[init_index], y=y_init)
+      test_y = output_warper(test_y)
+    dataset[test_dataset_id] = SubDataset(
+        x=test_x[init_index], y=test_y[init_index])
   else:
     test_x = np.empty((0, train_x.shape[1]))
     test_y = np.empty((0, 1))
-  if finite:
-    return dataset, test_dataset_id, SubDataset(x=test_x, y=test_y)
-  else:
-    hpob_oracle = output_warping(test_experimenter.EvaluateArray)
-    return dataset, test_dataset_id, hpob_oracle
-
-
-def pd2(key,
-        p_observed,
-        verbose=True,
-        sub_dataset_key=None,
-        input_warp=True,
-        output_log_warp=True,
-        num_remove=0,
-        metric_name='best_valid/error_rate',
-        p_remove=0.):
-  """Load PD2(Adam) data from init2winit and pick a random study as test function.
-
-  For matched dataframes, we set `aligned` to True in its trials and reflect it
-  in its corresponding SubDataset.
-  The `aligned` value and sub-dataset key has suffix aligned_suffix, which is
-  its phase identifier.
-
-  Args:
-    key: random state for jax.random.
-    p_observed: percentage of data that is observed.
-    verbose: print info about data if True.
-    sub_dataset_key: sub_dataset name to be queried.
-    input_warp: apply warping to data if True.
-    output_log_warp: use log warping for output.
-    num_remove: number of sub-datasets to remove.
-    metric_name: name of metric.
-    p_remove: proportion of data to be removed.
-
-  Returns:
-    dataset: Dict[str, SubDataset], mapping from study group to a SubDataset.
-    sub_dataset_key: study group key for testing in dataset.
-    queried_sub_dataset: SubDataset to be queried.
-  """
-  all_trials = []
-  for k, v in PD2.items():
-    with gfile.Open(v, 'rb') as f:
-      trials = pickle.load(f)
-      trials.loc[:, 'aligned'] = (k[1] == 'matched')
-      trials.loc[:, 'aligned_suffix'] = k[0]
-      all_trials.append(trials)
-  trials = pd.concat(all_trials)
-  labels = [
-      'hps.lr_hparams.decay_steps_factor', 'hps.lr_hparams.initial_value',
-      'hps.lr_hparams.power', 'hps.opt_hparams.beta1',
-      'hps.opt_hparams.epsilon', metric_name
-  ]
-  warp_func = {}
-  if input_warp:
-    warp_func = {
-        'hps.opt_hparams.beta1': lambda x: np.log(1 - x),
-        'hps.lr_hparams.initial_value': np.log,
-        'hps.opt_hparams.epsilon': np.log,
-    }
-  if output_log_warp:
-    warp_func['best_valid/error_rate'] = lambda x: -np.log(x + 1e-10)
-
-  return process_dataframe(
-      key=key,
-      trials=trials,
-      study_identifier='study_group',
-      labels=labels,
-      p_observed=p_observed,
-      maximize_metric=False,
-      warp_func=warp_func if input_warp else None,
-      verbose=verbose,
-      sub_dataset_key=sub_dataset_key,
-      num_remove=num_remove,
-      p_remove=p_remove)
-
-
-def grid2020(key,
-             p_observed,
-             verbose=True,
-             sub_dataset_key=None,
-             input_warp=True,
-             output_log_warp=True,
-             num_remove=0,
-             p_remove=0.):
-  """Load GRID_2020 data from init2winit and pick a random study as test function.
-
-  Args:
-    key: random state for jax.random.
-    p_observed: percentage of data that is observed.
-    verbose: print info about data if True.
-    sub_dataset_key: sub_dataset name to be queried.
-    input_warp: apply warping to data if True.
-    output_log_warp: use log warping for output.
-    num_remove: number of sub-datasets to remove.
-    p_remove: proportion of data to be removed.
-
-  Returns:
-    dataset: Dict[str, SubDataset], mapping from study group to a SubDataset.
-    sub_dataset_key: study group key for testing in dataset.
-    queried_sub_dataset: SubDataset to be queried.
-  """
-  experiment_df, failed_trials = data_loader.parallel_load_trials_in_directories(
-      GRID2020, 100)
-  logging.info(msg=f'Loaded trials shape: {experiment_df.shape}'
-               f'Failed trials len: {len(failed_trials)}')
-  experiment_df = df_utils.add_best_eval_columns(
-      experiment_df, ['valid/ce_loss', 'valid/error_rate'])
-  experiment_df.loc[:, 'aligned'] = True
-  experiment_df.loc[:, 'aligned_suffix'] = ''
-  labels = [
-      'hps.opt_hparams.momentum', 'hps.lr_hparams.initial_learning_rate',
-      'hps.lr_hparams.power', 'hps.lr_hparams.decay_steps_factor',
-      'best_valid/error_rate'
-  ]
-  warp_func = {}
-  if input_warp:
-    warp_func = {
-        'hps.opt_hparams.momentum': lambda x: np.log(1 - x),
-        'hps.lr_hparams.initial_learning_rate': np.log,
-    }
-  if output_log_warp:
-    warp_func['best_valid/error_rate'] = lambda x: -np.log(x + 1e-10)
-  return process_dataframe(
-      key=key,
-      trials=experiment_df,
-      study_identifier='dataset',
-      labels=labels,
-      p_observed=p_observed,
-      maximize_metric=False,
-      warp_func=warp_func,
-      verbose=verbose,
-      sub_dataset_key=sub_dataset_key,
-      num_remove=num_remove,
-      p_remove=p_remove)
+  return dataset, test_dataset_id, SubDataset(x=test_x, y=test_y)
 
 
 
