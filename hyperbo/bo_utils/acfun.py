@@ -174,8 +174,11 @@ pi3 = acfun_wrapper(
     acfun_sub=probability_of_improvement_sub,
     acfun_callback_default=partial(pi_callback_default, zeta=0.05))
 
+# UCB variants with 4., 3. or 2. as the UCB coefficient.
+# Default UCB has coefficient 3.
 ucb4 = acfun_wrapper(acfun_sub=ucb_sub, acfun_callback_default=lambda a, b: 4.)
 ucb3 = acfun_wrapper(acfun_sub=ucb_sub, acfun_callback_default=lambda a, b: 3.)
 ucb2 = acfun_wrapper(acfun_sub=ucb_sub, acfun_callback_default=lambda a, b: 2.)
+ucb = ucb3
 
 rand = random_search

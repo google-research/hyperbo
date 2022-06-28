@@ -45,13 +45,20 @@ HPOB_ROOT_DIR = 'hpob-data/'
 
 
 
-def get_aligned_dataset(trials, study_identifier, labels, verbose=True):
+def get_aligned_dataset(trials,
+                        study_identifier,
+                        labels,
+                        key=None,
+                        p_remove=0.,
+                        verbose=True):
   """Get aligned dataset from processed trials from get_dataset.
 
   Args:
     trials: pandas.DataFrame that stores all the trials.
     study_identifier: a label that uniquely identifies each study group.
     labels: labels of parameters and an eval metric (the last one).
+    key: Jax random state.
+    p_remove: proportion of data to be removed.
     verbose: print info about data if True.
 
   Returns:
@@ -86,6 +93,13 @@ def get_aligned_dataset(trials, study_identifier, labels, verbose=True):
         aligned_key = ';'.join(list(groups) + [aligned_suffix])
         xx = jnp.array(sub_df[labels[:-1]])
         yy = jnp.array(sub_df[remain_groups])
+        if p_remove:
+          n = xx.shape[0]
+          sub_sampled_idx = jax.random.choice(key, n,
+                                              (int(np.ceil(1 - p_remove) * n),),
+                                              replace=False)
+          xx = xx[sub_sampled_idx]
+          yy = yy[sub_sampled_idx]
         aligned_dataset[aligned_key] = SubDataset(
             x=xx, y=yy, aligned=';'.join(remain_groups + [aligned_suffix]))
   msg = f'aligned dataset: {jax.tree_map(jnp.shape, aligned_dataset)}'
@@ -249,6 +263,14 @@ def process_dataframe(
         p_observed=p_observed,
         verbose=verbose,
         sub_dataset_key=removed_sub_dataset_key)
+  key, subkey = jax.random.split(key)
+  aligned_dataset = get_aligned_dataset(
+      trials=trials,
+      study_identifier=study_identifier,
+      labels=labels,
+      key=subkey,
+      p_remove=p_remove,
+      verbose=verbose)
   if p_remove > 0:
     key, subkey = jax.random.split(key)
     removed_trials = trials.sample(
@@ -261,11 +283,6 @@ def process_dataframe(
       labels=labels,
       verbose=verbose)
 
-  aligned_dataset = get_aligned_dataset(
-      trials=trials,
-      study_identifier=study_identifier,
-      labels=labels,
-      verbose=verbose)
   dataset.update(aligned_dataset)
   return dataset, sub_dataset_key, queried_sub_dataset
 

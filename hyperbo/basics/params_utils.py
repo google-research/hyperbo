@@ -89,25 +89,35 @@ def encode_model_filename(config: ml_collections.ConfigDict):
   Returns:
     file name string.
   """
-  model_key = '-'.join(
-      (config.search_space_index, str(config.seed), config.mean_func_name,
-       config.cov_func_name, config.init_params.config['method'],
-       ))
-  if isinstance(config.init_params.config['mlp_features'], tuple):
+  if config.data_loader_name == 'pd1':
     model_key = '-'.join(
-        (model_key, str(config.init_params.config['mlp_features'])))
-  if config.use_surrogate_train:
+        (config.test_workload, str(config.seed), config.mean_func_name,
+         config.cov_func_name, config.init_params.config['method'],
+         config.init_params.config['objective'], str(config.num_remove),
+         str(config.p_observed), str(config.p_remove)))
+  elif 'hpob' in config.data_loader_name:
     model_key = '-'.join(
-        (model_key, 'use_surrogate_train'))
-  if config.wild_card_train:
-    model_key = '-'.join(
-        (model_key, f'wild_card_train={config.wild_card_train}'))
-  if config.normalize_y:
-    model_key = '-'.join(
-        (model_key, 'normalize_y'))
-  if config.output_log_warp:
-    model_key = '-'.join(
-        (model_key, 'output_log_warp'))
+        (config.search_space_index, str(config.seed), config.mean_func_name,
+         config.cov_func_name, config.init_params.config['method']))
+
+    if isinstance(config.init_params.config['mlp_features'], tuple):
+      model_key = '-'.join(
+          (model_key, str(config.init_params.config['mlp_features'])))
+    if config.use_surrogate_train:
+      model_key = '-'.join(
+          (model_key, 'use_surrogate_train'))
+    if config.wild_card_train:
+      model_key = '-'.join(
+          (model_key, f'wild_card_train={config.wild_card_train}'))
+    if config.normalize_y:
+      model_key = '-'.join(
+          (model_key, 'normalize_y'))
+    if config.output_log_warp:
+      model_key = '-'.join(
+          (model_key, 'output_log_warp'))
+  else:
+    raise NotImplementedError(
+        f'Filename encoder not implemented for {config.data_loader_name}')
   return os.path.join(config.model_dir, model_key + '.pkl')
 
 
