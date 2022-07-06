@@ -26,7 +26,7 @@ setup(
         'optax',
         'pandas',
         'tensorflow_probability',
-        'tensorflow==2.5.0',
+        'tensorflow>=2.5.0',
     ],
     extras_require={},
     classifiers=[
