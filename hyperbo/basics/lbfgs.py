@@ -31,12 +31,12 @@ import jax.numpy as jnp
 @jax.jit
 def _dict_tensordot(a, b, axes):
   fn = lambda a, b: jnp.tensordot(a, b, axes)
-  return jax.tree_multimap(fn, a, b)
+  return jax.tree_map(fn, a, b)
 
 
 @jax.jit
 def _dict_vdot(a, b):
-  return jax.tree_util.tree_reduce(jnp.add, jax.tree_multimap(jnp.vdot, a, b))
+  return jax.tree_util.tree_reduce(jnp.add, jax.tree_map(jnp.vdot, a, b))
 
 
 def _return_index(fn, index):
@@ -112,7 +112,7 @@ def backtracking_linesearch(val_and_grad_fn,
 
   for i in range(max_steps):
     fn = lambda a, b: a + b * alpha
-    new_params = jax.tree_multimap(fn, params, direction)
+    new_params = jax.tree_map(fn, params, direction)
 
     new_val, new_grads = val_and_grad_fn(new_params, *args)
     if has_aux:
@@ -169,7 +169,7 @@ def lbfgs_descent_dir_nocedal(grads, s, y):
   for i in range(bound - 1, -1, -1):
     alpha = inv_p[i] * _dict_vdot(s[i], q)
     alphas[i] = alpha
-    q = jax.tree_multimap(lambda a, b, alpha=alpha: a - alpha * b, q, y[i])
+    q = jax.tree_map(lambda a, b, alpha=alpha: a - alpha * b, q, y[i])
 
   gamma_k = _dict_vdot(s[-1], y[-1]) / _dict_vdot(y[-1], y[-1])
   direction = jax.tree_map(lambda x: gamma_k * x, q)
@@ -178,7 +178,7 @@ def lbfgs_descent_dir_nocedal(grads, s, y):
     beta = inv_p[i] * _dict_vdot(y[i], direction)
     step = (alphas[i] - beta)
     fn = lambda a, b, step=step: a + b * step
-    direction = jax.tree_multimap(fn, direction, s[i])
+    direction = jax.tree_map(fn, direction, s[i])
 
   return direction
 
@@ -274,7 +274,7 @@ def lbfgs(fn,
         has_aux=has_aux,
         max_steps=ls_steps)
     if new_val < val:
-      params = jax.tree_multimap(lambda a, b: a + b * step_size, params,
+      params = jax.tree_map(lambda a, b: a + b * step_size, params,
                                  descent_dir)
     else:
       logging.info("Linesearch did not make progress.")
@@ -298,13 +298,13 @@ def lbfgs(fn,
     if old_grads is not None:
       fn = lambda a, b, c: -a + b - c
       if len(s_k) > memory:
-        y_k[0] = jax.tree_multimap(fn, y_k[0], grads, old_grads)
-        s_k[0] = jax.tree_multimap(fn, s_k[0], params, old_params)
+        y_k[0] = jax.tree_map(fn, y_k[0], grads, old_grads)
+        s_k[0] = jax.tree_map(fn, s_k[0], params, old_params)
         y_k.append(y_k[0])
         s_k.append(s_k[0])
       else:
-        y_k.append(jax.tree_multimap(jnp.subtract, grads, old_grads))
-        s_k.append(jax.tree_multimap(jnp.subtract, params, old_params))
+        y_k.append(jax.tree_map(jnp.subtract, grads, old_grads))
+        s_k.append(jax.tree_map(jnp.subtract, params, old_params))
 
     if len(s_k) > memory:
       s_k = s_k[-memory:]
@@ -332,7 +332,7 @@ def lbfgs(fn,
         logging.info("Linesearch did not make progress.")
         break
 
-      params = jax.tree_multimap(lambda a, b: a + b * step_size, params,
+      params = jax.tree_map(lambda a, b: a + b * step_size, params,
                                  descent_dir)
       if callback is not None:
         callback(step=i, model_params=params, loss=new_val)
