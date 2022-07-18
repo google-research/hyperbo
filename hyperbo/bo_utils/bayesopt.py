@@ -20,7 +20,7 @@ from typing import Callable, Optional, Sequence, Tuple, Union, Any
 
 from absl import logging
 from hyperbo.basics import definitions as defs
-from hyperbo.experiments import const
+from hyperbo.bo_utils import const
 from hyperbo.gp_utils import gp
 from hyperbo.gp_utils import objectives as obj
 from hyperbo.gp_utils import priors

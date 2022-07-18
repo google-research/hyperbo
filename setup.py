@@ -25,6 +25,7 @@ setup(
         'numpy>=1.7',
         'optax',
         'pandas',
+        'jaxopt',
         'tensorflow_probability',
         'tensorflow>=2.5.0',
     ],

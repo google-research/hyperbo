@@ -26,8 +26,8 @@ from absl.testing import absltest
 from absl.testing import parameterized
 from hyperbo.basics import data_utils
 from hyperbo.basics import definitions as defs
+from hyperbo.bo_utils import const
 from hyperbo.bo_utils import data
-from hyperbo.experiments import const
 from hyperbo.gp_utils import kernel
 from hyperbo.gp_utils import mean
 import jax
@@ -35,7 +35,7 @@ import jax.numpy as jnp
 import numpy as np
 
 GPParams = defs.GPParams
-ALL_DATASETS = const.ALL_DATASETS
+ALL_DATASETS = const.HYPERBO_DATASETS
 
 
 class DataTest(parameterized.TestCase):
