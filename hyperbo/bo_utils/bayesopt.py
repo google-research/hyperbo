@@ -215,6 +215,9 @@ def run_synthetic(dataset,
             sub_dataset.y), (queried_sub_dataset.x,
                              queried_sub_dataset.y), model.params.__dict__
   else:
+    if data_loader_name not in INPUT_SAMPLERS:
+      raise NotImplementedError(
+          f'Input sampler for {data_loader_name} not found.')
     _, sample_key = jax.random.split(key)
     sub_dataset = bayesopt(
         key=sample_key,

@@ -55,7 +55,7 @@ HYPERBO_DATASETS = {
     'random': data.random,
 }
 
-INPUT_SAMPLERS = {'hpob': data.sample_hpob_inputs}
+INPUT_SAMPLERS = {}
 
 # For offline experiment manage
 RAND = 'rand'
