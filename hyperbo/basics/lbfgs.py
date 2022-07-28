@@ -249,6 +249,8 @@ def lbfgs(fn,
     y_k = []
 
     val, grads = val_and_grad_fn(params, *args)
+    if callback is not None:
+      callback(step=0, model_params=params, loss=val)
 
     grad_norm = _dict_vdot(grads, grads)
     if grad_norm <= tol:
@@ -283,7 +285,7 @@ def lbfgs(fn,
   else:
     s_k, y_k, old_grads, old_params = state
 
-  for i in range(steps):
+  for i in range(1, steps+1):
     val, grads = val_and_grad_fn(params, *args)
     if has_aux:
       val, aux = val
@@ -314,6 +316,8 @@ def lbfgs(fn,
 
     magnitude = _dict_vdot(y_k[-1], s_k[-1])
     logging.info("LBFGS step %d val: %f", i, val)
+    if callback is not None:
+      callback(step=i, model_params=params, loss=val)
 
     if jnp.isfinite(magnitude) and magnitude >= tol:
       descent_dir = lbfgs_descent_dir_nocedal(grads, s_k, y_k)
@@ -334,8 +338,6 @@ def lbfgs(fn,
 
       params = jax.tree_map(lambda a, b: a + b * step_size, params,
                                  descent_dir)
-      if callback is not None:
-        callback(step=i, model_params=params, loss=new_val)
     else:
       new_val = val
       logging.info("LBFGS terminating due to instability.")
