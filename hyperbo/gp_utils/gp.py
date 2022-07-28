@@ -17,7 +17,7 @@
 
 import functools
 import logging
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Tuple, Union
 
 import flax
 from flax import linen as nn
@@ -57,7 +57,7 @@ def infer_parameters(mean_func,
                      warp_func=None,
                      objective=obj.neg_log_marginal_likelihood,
                      key=None,
-                     params_save_file=None):
+                     get_params_path=None):
   """Posterior inference for a meta GP.
 
   Args:
@@ -79,11 +79,14 @@ def infer_parameters(mean_func,
       neg_log_marginal_likelihood or sample_mean_cov_regularizer or linear
       combinations of them.
     key: Jax random state.
-    params_save_file: optional file name to save params.
+    get_params_path: optional function handle to return the path to save model
+        params.
 
   Returns:
     Dictionary of inferred parameters.
   """
+  if not get_params_path:
+    get_params_path = lambda x=0: None
   if key is None:
     key = jax.random.PRNGKey(0)
     logging.info('Using default random state in infer_parameters.')
@@ -101,10 +104,10 @@ def infer_parameters(mean_func,
         subkey, dataset, batch_size)
     dataset = next(dataset_iter)
 
-  maxiter = init_params.config['maxiter']
+  max_training_step = init_params.config['max_training_step']
   logging_interval = init_params.config['logging_interval']
 
-  if maxiter <= 0 and method != 'slice_sample':
+  if max_training_step <= 0 and method != 'slice_sample':
     return init_params
 
   if method == 'adam':
@@ -124,7 +127,7 @@ def infer_parameters(mean_func,
     dataset_iter = data_utils.sub_sample_dataset_iterator(
         subkey, dataset, batch_size)
     model_param = params.model
-    for i in range(maxiter):
+    for i in range(max_training_step):
       batch = next(dataset_iter)
       current_loss, grads = jax.value_and_grad(loss_func)(model_param, batch)
       if jnp.isfinite(current_loss):
@@ -140,16 +143,16 @@ def infer_parameters(mean_func,
             params=params,
             loss=current_loss,
             warp_func=warp_func,
-            params_save_file=params_save_file)
+            params_save_file=get_params_path(i))
     current_loss = loss_func(model_param, batch)
     if jnp.isfinite(current_loss):
       params.model = model_param
     params_utils.log_params_loss(
-        step=maxiter,
+        step=max_training_step,
         params=params,
         loss=current_loss,
         warp_func=warp_func,
-        params_save_file=params_save_file)
+        params_save_file=get_params_path())
   else:
     @jit
     def loss_func(model_params):
@@ -165,7 +168,7 @@ def infer_parameters(mean_func,
           loss_func,
           params.model,
           tol=params.config['tol'],
-          maxiter=params.config['maxiter'])
+          max_training_step=params.config['max_training_step'])
     elif method == 'lbfgs':
 
       def lbfgs_callback(step, model_params, loss):
@@ -177,7 +180,7 @@ def infer_parameters(mean_func,
             params,
             loss,
             warp_func=warp_func,
-            params_save_file=params_save_file)
+            params_save_file=get_params_path(step))
 
       if 'alpha' not in params.config:
         alpha = 1.0
@@ -186,15 +189,15 @@ def infer_parameters(mean_func,
       current_loss, params.model, _ = lbfgs.lbfgs(
           loss_func,
           params.model,
-          steps=params.config['maxiter'],
+          steps=params.config['max_training_step'],
           alpha=alpha,
           callback=lbfgs_callback)
       params_utils.log_params_loss(
-          step=maxiter,
+          step=max_training_step,
           params=params,
           loss=current_loss,
           warp_func=warp_func,
-          params_save_file=params_save_file)
+          params_save_file=get_params_path())
     else:
       raise ValueError(f'Optimization method {method} is not supported.')
   params.cache = {}
@@ -332,13 +335,11 @@ class GP:
   dataset: Dict[Union[int, str], SubDataset]
 
   def __init__(self,
-               dataset: Union[List[Union[Tuple[jnp.ndarray, ...], SubDataset]],
-                              Dict[Union[str], Union[Tuple[jnp.ndarray, ...],
-                                                     SubDataset]]],
+               dataset: defs.AllowedDatasetTypes,
                mean_func: Callable[..., jnp.array],
                cov_func: Callable[..., jnp.array],
                params: GPParams,
-               warp_func: Optional[Dict[str, Callable[[Any], Any]]] = None):
+               warp_func: defs.WarpFuncType = None):
     self.mean_func = mean_func
     self.cov_func = cov_func
     if params is not None:
@@ -461,12 +462,13 @@ class GP:
     if sub_dataset_key in self.params.cache:
       self.params.cache[sub_dataset_key].needs_update = True
 
-  def train(self, key=None, params_save_file=None) -> GPParams:
+  def train(self, key=None, get_params_path=None) -> GPParams:
     """Train the GP by fitting it to the dataset.
 
     Args:
       key: Jax random state.
-      params_save_file: optional file name to save params.
+      get_params_path: optional function handle to return the path to save model
+        params.
 
     Returns:
       params: GPParams.
@@ -487,7 +489,7 @@ class GP:
         warp_func=self.warp_func,
         objective=self.params.config['objective'],
         key=subkey,
-        params_save_file=params_save_file)
+        get_params_path=get_params_path)
     logging.info(msg=f'params = {self.params}')
     return self.params
 

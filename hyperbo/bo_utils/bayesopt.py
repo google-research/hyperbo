@@ -59,11 +59,10 @@ def bayesopt(key: Any, model: gp.GP, sub_dataset_key: Union[int, str],
     start_time = time.time()
     x_samples = input_sampler(key, input_dim)
     evals = ac_func(
-        model=model,
-        sub_dataset_key=sub_dataset_key,
-        x_queries=x_samples)
+        model=model, sub_dataset_key=sub_dataset_key, x_queries=x_samples)
     select_idx = evals.argmax()
     x_init = x_samples[select_idx]
+
     def f(x):
       return -ac_func(
           model=model,
@@ -84,9 +83,10 @@ def bayesopt(key: Any, model: gp.GP, sub_dataset_key: Union[int, str],
       if model.params.config['objective'] in [obj.regkl, obj.regeuc]:
         raise ValueError('Objective must include NLL to retrain.')
       else:
-        maxiter = model.params.config['retrain']
-        logging.info(msg=f'Retraining with maxiter = {maxiter}.')
-        model.params.config['maxiter'] = maxiter
+        max_training_step = model.params.config['retrain']
+        logging.info(
+            msg=f'Retraining with max_training_step = {max_training_step}.')
+        model.params.config['max_training_step'] = max_training_step
         model.train()
 
   return model.dataset.get(sub_dataset_key,
@@ -124,35 +124,38 @@ def simulated_bayesopt(model: gp.GP, sub_dataset_key: Union[int, str],
       if model.params.config['objective'] in [obj.regkl, obj.regeuc]:
         raise ValueError('Objective must include NLL to retrain.')
       else:
-        maxiter = model.params.config['retrain']
-        logging.info(msg=f'Retraining with maxiter = {maxiter}.')
-        model.params.config['maxiter'] = maxiter
+        max_training_step = model.params.config['retrain']
+        logging.info(
+            msg=('Retraining with max_training_step = '
+                 f'{max_training_step}.'))
+        model.params.config['max_training_step'] = max_training_step
         model.train()
 
   return model.dataset.get(sub_dataset_key,
                            SubDataset(jnp.empty(0), jnp.empty(0)))
 
 
-def run_synthetic(dataset,
-                  sub_dataset_key,
-                  queried_sub_dataset,
-                  mean_func,
-                  cov_func,
-                  init_params,
-                  ac_func,
-                  iters,
-                  warp_func=None,
-                  init_random_key=None,
-                  method='hyperbo',
-                  init_model=False,
-                  finite_search_space=True,
-                  data_loader_name='',
-                  params_save_file=None):
+def run_bayesopt(
+    dataset: defs.AllowedDatasetTypes,
+    sub_dataset_key: str,
+    queried_sub_dataset: Union[SubDataset, Callable[[Any], Any]],
+    mean_func: Callable[..., jnp.array],
+    cov_func: Callable[..., jnp.array],
+    init_params: defs.GPParams,
+    ac_func: Callable[..., jnp.array],
+    iters: int,
+    warp_func: defs.WarpFuncType = None,
+    init_random_key: Optional[jax.random.PRNGKeyArray] = None,
+    method: str = 'hyperbo',
+    init_model: bool = False,
+    data_loader_name: str = '',
+    get_params_path: Optional[str] = None):
   """Running bayesopt experiment with synthetic data.
 
   Args:
     dataset: a list of vx, vy pairs, i.e. [(vx, vy)_i], where vx is
-      m_points_historical x d and vy is m_points_historical x 1.
+      m_points_historical x d and vy is m_points_historical x n; n > 1 iff this
+      is an aligned subdataset.
     sub_dataset_key: key of the sub_dataset for testing in dataset.
     queried_sub_dataset: sub_dataset that can be queried.
     mean_func: mean function handle that maps from (params, n x d input,
@@ -170,9 +173,8 @@ def run_synthetic(dataset,
       required parts of GPParams.
     method: BO method.
     init_model: to initialize model if True; otherwise False.
-    finite_search_space: use a finite search space if True; otherwise False.
     data_loader_name: data loader name, e.g. pd1, hpob.
-    params_save_file: optional file name to save params.
+    get_params_path: optional function handle that returns params path.
 
   Returns:
     All observations in (x, y) pairs returned by the bayesopt strategy and all
@@ -203,8 +205,8 @@ def run_synthetic(dataset,
     model.initialize_params(subkey)
     # Infer GP parameters.
     key, subkey = jax.random.split(key)
-    model.train(subkey, params_save_file)
-  if finite_search_space:
+    model.train(subkey, get_params_path)
+  if isinstance(queried_sub_dataset, SubDataset):
     sub_dataset = simulated_bayesopt(
         model=model,
         sub_dataset_key=sub_dataset_key,
@@ -227,8 +229,7 @@ def run_synthetic(dataset,
         ac_func=ac_func,
         iters=iters,
         input_sampler=INPUT_SAMPLERS[data_loader_name])
-    return (sub_dataset.x,
-            sub_dataset.y), None, model.params.__dict__
+    return (sub_dataset.x, sub_dataset.y), None, model.params.__dict__
 
 
 def _onehot_matrix(shape, idx) -> np.ndarray:

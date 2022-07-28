@@ -120,7 +120,7 @@ class GPTest(parameterized.TestCase):
         'method': 'adam',
         'learning_rate': 1e-5,
         'beta': 0.9,
-        'maxiter': 1,
+        'max_training_step': 1,
         'logging_interval': 1,
         'batch_size': 100,
     })

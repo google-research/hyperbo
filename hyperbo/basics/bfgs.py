@@ -21,7 +21,7 @@ import jax.scipy.optimize as jspopt
 
 
 def bfgs(fun, x0: Dict[str, Any], tol: float,
-         maxiter: int) -> Tuple[Dict[str, Any], float]:
+         max_training_step: int) -> Tuple[Dict[str, Any], float]:
   """Minimization of scalar function of a pytree input.
 
   Args:
@@ -29,7 +29,7 @@ def bfgs(fun, x0: Dict[str, Any], tol: float,
       where ``x`` is a pytree.
     x0: initial guess.
     tol: tolerance for termination.
-    maxiter: maximum number of iterations to perform.
+    max_training_step: maximum number of iterations to perform.
 
   Returns:
   x: Dict[str, Any], optimized target.
@@ -42,7 +42,11 @@ def bfgs(fun, x0: Dict[str, Any], tol: float,
     return fun(x)
 
   results = jspopt.minimize(
-      flat_fun, flat_x0, method='bfgs', tol=tol, options={'maxiter': maxiter})
+      flat_fun,
+      flat_x0,
+      method='bfgs',
+      tol=tol,
+      options={'max_training_step': max_training_step})
   x = unravel_pytree(results.x)
   logging.info(msg=f'BFGS results = {results}')
   return x, results.fun

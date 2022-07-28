@@ -15,7 +15,7 @@
 
 """Definitions of GP-related data structures."""
 import dataclasses
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union, Callable
 
 import jax.numpy as jnp
 
@@ -43,3 +43,10 @@ class GPParams:
   cache: Dict[Union[int, str],
               GPCache] = dataclasses.field(default_factory=lambda: {})
   samples: List[Dict[str, Any]] = dataclasses.field(default_factory=lambda: [])
+
+
+AllowedDatasetTypes = Union[List[Union[Tuple[jnp.ndarray, ...], SubDataset]],
+                            Dict[Union[str], Union[Tuple[jnp.ndarray, ...],
+                                                   SubDataset]]]
+
+WarpFuncType = Optional[Dict[str, Callable[[Any], Any]]]

@@ -179,7 +179,7 @@ def get_workload2result(res,
                         error_rate,
                         best_only=True,
                         use_name=True,
-                        maxiter=100):
+                        max_training_step=100):
   """Returns workload2result dict.
 
   Args:
@@ -188,7 +188,7 @@ def get_workload2result(res,
     best_only: only include the best regret or error rate instead of the entire
       sequence computed from BayesOpt.
     use_name: use workload names specified in WORKLOAD2NAME.
-    maxiter: maximum iteration to compute best error rate or regret.
+    max_training_step: maximum iteration to compute best error rate or regret.
 
   Returns:
     Dictionary mapping from workload to a result dictionary. The result
@@ -206,13 +206,13 @@ def get_workload2result(res,
         yy = teststudy2y_array[(wl, i)][1]
         yy = np.exp(-yy) - 1e-10
         if best_only:
-          workload2result[wl][method].append(min(yy[:maxiter]))
+          workload2result[wl][method].append(min(yy[:max_training_step]))
         else:
           workload2result[wl][method].append(yy)
       else:
         regret = teststudy2y_array[(wl, i)][0]
         if best_only:  # get the regret in the last round of BO
-          workload2result[wl][method].append(regret[maxiter - 1])
+          workload2result[wl][method].append(regret[max_training_step - 1])
         else:
           workload2result[wl][method].append(regret)
   if use_name:
@@ -222,14 +222,14 @@ def get_workload2result(res,
   return workload2result
 
 
-def analyze_results(res, percentile=20, error_rate=True, maxiter=100):
+def analyze_results(res, percentile=20, error_rate=True, max_training_step=100):
   """Analyze results for each workload and method.
 
   Args:
     res: variable returned by get_results.
     percentile: desired percentile to return metrics per workload and method.
     error_rate: use error rate instead of regret on warped output.
-    maxiter: maximum iteration to compute best error rate or regret.
+    max_training_step: maximum iteration to compute best error rate or regret.
 
   Returns:
     Dictionary mapping from workload to a result dictionary. The result
@@ -237,7 +237,7 @@ def analyze_results(res, percentile=20, error_rate=True, maxiter=100):
     median, upper percentile).
   """
   workload2result = get_workload2result(
-      res, error_rate, best_only=True, maxiter=maxiter)
+      res, error_rate, best_only=True, max_training_step=max_training_step)
   for method in res:
     for wl in workload2result:
       if method in workload2result[wl]:

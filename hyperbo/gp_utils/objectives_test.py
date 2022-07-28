@@ -111,7 +111,7 @@ class ObjectivesTest(parameterized.TestCase):
         config={
             'method':
                 opt_method,
-            'maxiter':
+            'max_training_step':
                 2,
             'logging_interval': 1,
             'objective':
@@ -248,7 +248,7 @@ class ObjectivesTest(parameterized.TestCase):
         config={
             'method':
                 opt_method,
-            'maxiter':
+            'max_training_step':
                 2,
             'logging_interval': 1,
             'objective': obj.nll,

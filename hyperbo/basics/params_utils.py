@@ -27,21 +27,28 @@ import ml_collections
 from tensorflow.io import gfile
 
 GPParams = defs.GPParams
+FINAL_PARAM_FILE_INFO = 'FINAL'
 
 
-def save_params(filenm: str, params: Union[GPParams, Dict[str, Any]]):
+def save_params(filenm: str,
+                params: Union[GPParams, Dict[str, Any]],
+                state: Any = None):
   """Save to file."""
   if not isinstance(params, dict):
     params = params.__dict__
   params = jax.tree_map(lambda x: str(x) if callable(x) else x, params)
+  if state:
+    state = jax.tree_map(lambda x: str(x) if callable(x) else x, state)
   dirnm = os.path.dirname(filenm)
   if not gfile.Exists(dirnm):
     gfile.MakeDirs(dirnm)
   with gfile.GFile(filenm, 'wb') as f:
-    pickle.dump(params, f)
+    pickle.dump((params, state), f)
 
 
-def load_params(filenm: str, use_gpparams: bool = True) -> Any:
+def load_params(filenm: str,
+                use_gpparams: bool = True,
+                include_state: bool = False):
   """Load from file."""
   if not gfile.Exists(filenm):
     msg = f'{filenm} does not exist.'
@@ -49,11 +56,14 @@ def load_params(filenm: str, use_gpparams: bool = True) -> Any:
     print(msg)
     return None
   with gfile.GFile(filenm, 'rb') as f:
-    params_dict = pickle.load(f)
+    params_dict, state = pickle.load(f)
   if use_gpparams:
-    return GPParams(**params_dict)
+    params = GPParams(**params_dict)
   else:
-    return params_dict
+    params = params_dict
+  if include_state:
+    return params, state
+  return params
 
 
 def _verify_params(model_params: Dict[str, Any], expected_keys: List[str]):
@@ -89,11 +99,15 @@ def encode_model_filename(config: ml_collections.ConfigDict):
   Returns:
     file name string.
   """
+  model_key = ''
   if config.data_loader_name == 'pd1':
     model_key = '-'.join(
         (config.test_workload, str(config.seed), config.mean_func_name,
-         config.cov_func_name, config.init_params.config['method'],
-         config.init_params.config['objective'], str(config.num_remove),
+         config.cov_func_name, str(config.init_params.config['mlp_features']),
+         config.init_params.config['objective'],
+         config.init_params.config['method'],
+         str(config.init_params.config['max_training_step']),
+         str(config.init_params.config['batch_size']), str(config.num_remove),
          str(config.p_observed), str(config.p_remove)))
   elif 'hpob' in config.data_loader_name:
     model_key = '-'.join(
@@ -104,21 +118,34 @@ def encode_model_filename(config: ml_collections.ConfigDict):
       model_key = '-'.join(
           (model_key, str(config.init_params.config['mlp_features'])))
     if config.use_surrogate_train:
-      model_key = '-'.join(
-          (model_key, 'use_surrogate_train'))
+      model_key = '-'.join((model_key, 'use_surrogate_train'))
     if config.wild_card_train:
       model_key = '-'.join(
           (model_key, f'wild_card_train={config.wild_card_train}'))
     if config.normalize_y:
-      model_key = '-'.join(
-          (model_key, 'normalize_y'))
+      model_key = '-'.join((model_key, 'normalize_y'))
     if config.output_log_warp:
-      model_key = '-'.join(
-          (model_key, 'output_log_warp'))
+      model_key = '-'.join((model_key, 'output_log_warp'))
   else:
     raise NotImplementedError(
         f'Filename encoder not implemented for {config.data_loader_name}')
-  return os.path.join(config.model_dir, model_key + '.pkl')
+
+  def get_path(additional_info=FINAL_PARAM_FILE_INFO):
+    """Generate the path to save model parameters.
+
+    Args:
+      additional_info: a string or int that will be appended at the end of the
+        filename to encode additional information.
+
+    Returns:
+      full path with filename.
+    """
+    if not isinstance(additional_info, str):
+      additional_info = str(additional_info)
+    model_file_name = '-'.join((model_key, additional_info))
+    return os.path.join(config.model_dir, model_file_name + '.pkl')
+
+  return get_path
 
 
 def log_params_loss(step: int,
@@ -131,9 +158,8 @@ def log_params_loss(step: int,
   keys = list(model_params.keys())
   retrieved_params = dict(
       zip(keys, retrieve_params(params, keys, warp_func=warp_func)))
+  logging.info(msg=f'logging iter={step}, loss={loss}, '
+               f'params.model after warping={retrieved_params}')
   if params_save_file is not None:
-    save_params(params_save_file, params)
-  logging.log(
-      msg=f'iter={step}, loss={loss}, '
-      f'params.model after warping={retrieved_params}',
-      level=logging.INFO)
+    logging.info(msg=f'Saving params to {params_save_file}.')
+    save_params(params_save_file, params, state=(step, loss))

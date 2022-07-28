@@ -104,7 +104,7 @@ class GPTest(parameterized.TestCase):
             'method': 'slice_sample',
             'burnin': nsamples,
             'nsamples': nsamples,
-            'maxiter': 0,
+            'max_training_step': 0,
             'logging_interval': 1,
             'priors': priors.DEFAULT_PRIORS,
             'mlp_features': (8,),

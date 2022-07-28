@@ -156,9 +156,10 @@ def neg_log_marginal_likelihood(mean_func,
 
 
 nll = neg_log_marginal_likelihood
-regkl = sample_mean_cov_regularizer
-regeuc = sample_mean_cov_regularizer_euc
-kl = regkl
+kl = sample_mean_cov_regularizer
+euc = sample_mean_cov_regularizer_euc
+regkl = kl
+regeuc = euc
 
 
 def add(*objectives):
