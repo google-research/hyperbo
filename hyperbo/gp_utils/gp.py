@@ -57,7 +57,8 @@ def infer_parameters(mean_func,
                      warp_func=None,
                      objective=obj.neg_log_marginal_likelihood,
                      key=None,
-                     get_params_path=None):
+                     get_params_path=None,
+                     callback=None):
   """Posterior inference for a meta GP.
 
   Args:
@@ -81,6 +82,7 @@ def infer_parameters(mean_func,
     key: Jax random state.
     get_params_path: optional function handle to return the path to save model
         params.
+    callback: optional callback function for loggin of training steps.
 
   Returns:
     Dictionary of inferred parameters.
@@ -105,7 +107,6 @@ def infer_parameters(mean_func,
     dataset = next(dataset_iter)
 
   max_training_step = init_params.config['max_training_step']
-  logging_interval = init_params.config['logging_interval']
 
   if max_training_step <= 0 and method != 'slice_sample':
     return init_params
@@ -137,13 +138,8 @@ def infer_parameters(mean_func,
         break
       updates, opt_state = optimizer.update(grads, opt_state)
       model_param = optax.apply_updates(model_param, updates)
-      if i % logging_interval == 0:
-        params_utils.log_params_loss(
-            step=i,
-            params=params,
-            loss=current_loss,
-            warp_func=warp_func,
-            params_save_file=get_params_path(i))
+      if callback:
+        callback(i, params.model, current_loss)
     current_loss = loss_func(model_param, batch)
     if jnp.isfinite(current_loss):
       params.model = model_param
@@ -171,17 +167,6 @@ def infer_parameters(mean_func,
           max_training_step=params.config['max_training_step'])
     elif method == 'lbfgs':
 
-      def lbfgs_callback(step, model_params, loss):
-        if step % logging_interval != 0:
-          return
-        params.model = model_params
-        params_utils.log_params_loss(
-            step,
-            params,
-            loss,
-            warp_func=warp_func,
-            params_save_file=get_params_path(step))
-
       if 'alpha' not in params.config:
         alpha = 1.0
       else:
@@ -191,7 +176,7 @@ def infer_parameters(mean_func,
           params.model,
           steps=params.config['max_training_step'],
           alpha=alpha,
-          callback=lbfgs_callback)
+          callback=callback)
       params_utils.log_params_loss(
           step=max_training_step,
           params=params,
@@ -462,13 +447,14 @@ class GP:
     if sub_dataset_key in self.params.cache:
       self.params.cache[sub_dataset_key].needs_update = True
 
-  def train(self, key=None, get_params_path=None) -> GPParams:
+  def train(self, key=None, get_params_path=None, callback=None) -> GPParams:
     """Train the GP by fitting it to the dataset.
 
     Args:
       key: Jax random state.
       get_params_path: optional function handle to return the path to save model
         params.
+      callback: optional callback function for loggin of training steps.
 
     Returns:
       params: GPParams.
@@ -489,7 +475,8 @@ class GP:
         warp_func=self.warp_func,
         objective=self.params.config['objective'],
         key=subkey,
-        get_params_path=get_params_path)
+        get_params_path=get_params_path,
+        callback=callback)
     logging.info(msg=f'params = {self.params}')
     return self.params
 

@@ -149,7 +149,8 @@ def run_bayesopt(
     method: str = 'hyperbo',
     init_model: bool = False,
     data_loader_name: str = '',
-    get_params_path: Optional[str] = None):
+    get_params_path: Optional[Callable[[Any], Any]] = None,
+    callback: Optional[Callable[[Any], Any]] = None):
   """Running bayesopt experiment with synthetic data.
 
   Args:
@@ -175,6 +176,7 @@ def run_bayesopt(
     init_model: to initialize model if True; otherwise False.
     data_loader_name: data loader name, e.g. pd1, hpob.
     get_params_path: optional function handle that returns params path.
+    callback: optional callback function for loggin of training steps.
 
   Returns:
     All observations in (x, y) pairs returned by the bayesopt strategy and all
@@ -205,7 +207,7 @@ def run_bayesopt(
     model.initialize_params(subkey)
     # Infer GP parameters.
     key, subkey = jax.random.split(key)
-    model.train(subkey, get_params_path)
+    model.train(subkey, get_params_path, callback=callback)
   if isinstance(queried_sub_dataset, SubDataset):
     sub_dataset = simulated_bayesopt(
         model=model,

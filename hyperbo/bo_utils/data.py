@@ -224,6 +224,7 @@ def process_dataframe(
   trials = trials[[study_identifier] + labels +
                   ['aligned', 'aligned_suffix']].copy(deep=True)
   trials = trials.dropna()
+
   if verbose:
     print('trials: ', trials.shape)
   if not warp_func:
@@ -295,7 +296,8 @@ def pd1(key,
         output_log_warp=True,
         num_remove=0,
         metric_name='best_valid/error_rate',
-        p_remove=0.):
+        p_remove=0.,
+        data_files=PD1.copy()):
   """Load PD1(Nesterov) from init2winit and pick a random study as test function.
 
   For matched dataframes, we set `aligned` to True in its trials and reflect it
@@ -313,6 +315,8 @@ def pd1(key,
     num_remove: number of sub-datasets to remove.
     metric_name: name of metric.
     p_remove: proportion of data to be removed.
+    data_files: a dict mapping data descriptions to files. See PD1 for an
+      example.
 
   Returns:
     dataset: Dict[str, SubDataset], mapping from study group to a SubDataset.
@@ -320,13 +324,22 @@ def pd1(key,
     queried_sub_dataset: SubDataset to be queried.
   """
   all_trials = []
-  for k, v in PD1.items():
-    with gfile.GFile(v, 'r') as f:
-      trials = pd.read_json(f, orient='records', lines=True)
-      trials.loc[:, 'aligned'] = (k[1] == 'matched')
-      trials.loc[:, 'aligned_suffix'] = k[0]
-      all_trials.append(trials)
+  for k, v in data_files.items():
+    if 'pkl' in v:
+      with gfile.GFile(v, 'rb') as f:
+        trials = pickle.load(f)
+        trials.loc[:, 'aligned'] = (k[1] == 'matched')
+        trials.loc[:, 'aligned_suffix'] = k[0]
+        all_trials.append(trials)
+    else:
+      with gfile.GFile(v, 'r') as f:
+        trials = pd.read_json(
+            f, orient='records', lines=True, precise_float=True)
+        trials.loc[:, 'aligned'] = (k[1] == 'matched')
+        trials.loc[:, 'aligned_suffix'] = k[0]
+        all_trials.append(trials)
   trials = pd.concat(all_trials)
+  trials = trials.reset_index(drop=True)
   labels = [
       'hps.lr_hparams.decay_steps_factor', 'hps.lr_hparams.initial_value',
       'hps.lr_hparams.power', 'hps.opt_hparams.momentum', metric_name
