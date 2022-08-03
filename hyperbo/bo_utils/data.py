@@ -499,7 +499,8 @@ def get_output_warper(output_log_warp=True, return_warping=False):
 def hpob_dataset(search_space_index,
                  test_dataset_id_index,
                  test_seed,
-                 output_log_warp=True):
+                 output_log_warp=True,
+                 test_only=False):
   """Load the original finite hpob dataset by search space and test dataset id.
 
   To use the HPO-B dataset, download data and import hpob_handler from
@@ -511,6 +512,7 @@ def hpob_dataset(search_space_index,
     test_seed: Identifier of the seed for the evaluation. Options: test0, test1,
       test2, test3, test4.
     output_log_warp: log warp on output with max assumed to be 1.
+    test_only: Loads only the meta-test split from HPO-B-v3.
 
   Returns:
     dataset: Dict[str, SubDataset], mapping from study group to a SubDataset.
@@ -520,10 +522,15 @@ def hpob_dataset(search_space_index,
   # pylint: disable=g-bad-import-order,g-import-not-at-top
   from hpob import hpob_handler
   # pylint: enable=g-bad-import-order,g-import-not-at-top
-  handler = hpob_handler.HPOBHandler(root_dir=HPOB_ROOT_DIR, mode='v3')
+  if test_only:
+    handler = hpob_handler.HPOBHandler(root_dir=HPOB_ROOT_DIR, mode='v3-test')
+  else:
+    handler = hpob_handler.HPOBHandler(root_dir=HPOB_ROOT_DIR, mode='v3')
   if isinstance(search_space_index, str):
     search_space = search_space_index
   elif isinstance(search_space_index, int):
+    if test_only:
+      raise ValueError('Cannot use int search_space_index if test_only.')
     spaces = list(handler.meta_train_data.keys())
     spaces.sort()
     search_space = spaces[search_space_index]
@@ -539,12 +546,12 @@ def hpob_dataset(search_space_index,
     raise ValueError('test_dataset_id_index must be str or int.')
   dataset = {}
   output_warper = get_output_warper(output_log_warp)
-
-  for dataset_id in handler.meta_train_data[search_space]:
-    train_x = np.array(handler.meta_train_data[search_space][dataset_id]['X'])
-    train_y = np.array(handler.meta_train_data[search_space][dataset_id]['y'])
-    train_y = output_warper(train_y)
-    dataset[dataset_id] = SubDataset(x=train_x, y=train_y)
+  if not test_only:
+    for dataset_id in handler.meta_train_data[search_space]:
+      train_x = np.array(handler.meta_train_data[search_space][dataset_id]['X'])
+      train_y = np.array(handler.meta_train_data[search_space][dataset_id]['y'])
+      train_y = output_warper(train_y)
+      dataset[dataset_id] = SubDataset(x=train_x, y=train_y)
   if test_seed in ['test0', 'test1', 'test2', 'test3', 'test4']:
     init_index = handler.bo_initializations[search_space][test_dataset_id][
         test_seed]
