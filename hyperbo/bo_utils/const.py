@@ -23,6 +23,7 @@ MEAN = {
     'constant': mean.constant,
     'linear': mean.linear,
     'linear_mlp': mean.linear_mlp,
+    'zero': mean.zero,
 }
 
 KERNEL = {

@@ -52,6 +52,12 @@ def mean_vector(mean_func):
 
 
 @mean_vector
+def zero(*_, **_kwargs):
+  """Zero mean function."""
+  return jnp.full((1,), 0)
+
+
+@mean_vector
 def constant(params, _, warp_func=None):
   """Constant mean function."""
   val, = retrieve_params(params, ['constant'], warp_func)

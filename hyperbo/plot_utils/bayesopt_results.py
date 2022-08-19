@@ -15,14 +15,52 @@
 
 """Plot utils for Bayesopt results."""
 import collections
+import concurrent.futures
+import logging
 import os
 
 from hyperbo.basics import params_utils
 import utils  # local file import
+from ml_collections import config_dict
 import numpy as np
 # For backward compatibility
 plot_all = utils.plot_all
 COLORS = utils.COLORS
+
+
+def run_in_parallel(function, list_of_kwargs_to_function, num_workers):
+  """Run a function on a list of kwargs in parallel with ThreadPoolExecutor.
+
+  Adapted from code by mlbileschi.
+  Args:
+    function: a function.
+    list_of_kwargs_to_function: list of dictionary from string to argument
+      value. These will be passed into `function` as kwargs.
+    num_workers: int.
+
+  Returns:
+    list of return values from function.
+  """
+  if num_workers < 1:
+    raise ValueError(
+        'Number of workers must be greater than 0. Was {}'.format(num_workers))
+
+  with concurrent.futures.ThreadPoolExecutor(num_workers) as executor:
+    futures = []
+    logging.info(
+        'Adding %d jobs to process pool to run in %d parallel '
+        'threads.', len(list_of_kwargs_to_function), num_workers)
+
+    for kwargs in list_of_kwargs_to_function:
+      f = executor.submit(function, **kwargs)
+      futures.append(f)
+
+    for f in concurrent.futures.as_completed(futures):
+      if f.exception():
+        # Propagate exception to main thread.
+        raise f.exception()
+
+  return [f.result() for f in futures]
 
 
 def get_model(dirnm, unique_id, verbose, filenm='result.pkl', retry=True):
@@ -57,6 +95,7 @@ def get_exp_result(dirnm,
   """Get result from one bo run."""
   file = os.path.join(dirnm, filenm)
   res = params_utils.load_params(file, use_gpparams=False)
+  res = res[1]
   if not res and not retry:
     return None
   yy = res['observations'][1].flatten()
@@ -94,6 +133,104 @@ def get_exp_result(dirnm,
   return (workload, unique_id), (regret_array, yy, maxy)
 
 
+def get_hpob_exp(filenm, unique_id, verbose=True):
+  """Get result from one bo run."""
+  res = params_utils.load_params(filenm, use_gpparams=False, include_state=True)
+  if not res:
+    return None
+  if not isinstance(res, tuple):
+    print(res)
+  res = res[1]
+
+  def output_warper_inverse(y):
+    return -np.exp(-y) + 1e-6 + 1.
+
+  yy = res['observations'][1].flatten()
+  yq = res['queries'][1].flatten()
+
+  config = config_dict.ConfigDict(res['config'])
+  config.init_params = config_dict.ConfigDict(config.init_params)
+
+  if config.output_log_warp:
+    yy = output_warper_inverse(yy)
+    yq = output_warper_inverse(yq)
+
+  get_model_key = params_utils.encode_model_filename(config)
+  model_key = get_model_key(model_key_only=True)
+  exp_key = '-'.join((model_key, config.test_dataset_index, config.test_seed,
+                      config.ac_func_name, config.method))
+
+  maxy = max(max(yy), max(yq))
+  regret_array = [maxy - max(yy[:j + 1]) for j in range(len(yy))]
+  if verbose:
+    print(f'filenm={filenm}, \n'
+          f'len(regret)={len(regret_array)}, \n'
+          f'final regret={regret_array[-1]} \n')
+  print((exp_key, unique_id), flush=True)
+  return (exp_key, unique_id), (regret_array, yy, maxy)
+
+
+def get_multi_hpob_exp(kwargs):
+  res = []
+  print(f'in multi exp - kwargs: {len(kwargs)}', flush=True)
+  for kwarg in kwargs:
+    res.append(get_hpob_exp(**kwarg))
+  print(f'in multi exp: {len(res)}', flush=True)
+  return res
+
+
+def hpob_results(filenames,
+                 verbose=False,
+                 process_func=get_multi_hpob_exp,
+                 n=100,
+                 parallel=True):
+  """Get a dict of results aggregated over n files in a directory.
+
+  Args:
+    filenames: file names of results.
+    verbose: print logging messages if True.
+    process_func: function to process each result file.
+    n: maximum number of sequential files to read for each parallel worker.
+    parallel: use run_in_parallel if True; otherwise sequential.
+
+  Returns:
+    a dictionary mapping from the first returned item of process_func to the
+    second returned item of process_func.
+  """
+  kwarg_list = []
+  sub_list = []
+  cnt = 0
+  for i in range(len(filenames)):
+    kwarg = {
+        'filenm': filenames[i]['filenm'],
+        'unique_id': i,
+        'verbose': verbose
+    }
+    sub_list.append(kwarg)
+    cnt += 1
+    if cnt % n == 0:
+      kwarg_list.append({'kwargs': sub_list})
+      sub_list = []
+      cnt = 0
+  if sub_list:
+    kwarg_list.append({'kwargs': sub_list})
+  results = []
+  if parallel:
+    results = run_in_parallel(process_func, kwarg_list,
+                              min(len(filenames) // n, 100))
+  else:
+    for kwarg in kwarg_list:
+      r = process_func(**kwarg)
+      results.append(r)
+
+  result_list = []
+  for sub_res in results:
+    for r in sub_res:
+      if r is not None:
+        result_list.append(r)
+  return dict(result_list)
+
+
 def get_results(directory, n, verbose=False, process_func=get_exp_result):
   """Get a dict of results aggregated over n files in a directory.
 
@@ -107,9 +244,6 @@ def get_results(directory, n, verbose=False, process_func=get_exp_result):
     a dictionary mapping from the first returned item of process_func to the
     second returned item of process_func.
   """
-  # pylint: disable=g-bad-import-order,g-import-not-at-top
-  from init2winit.utils import run_in_parallel
-  # pylint: enable=g-bad-import-order,g-import-not-at-top
   kwarg_list = []
   for i in range(n):
     kwarg = {
@@ -302,7 +436,7 @@ def get_method2fraction(workload2result, workload2ref, bo_iters=100):
         total[method] += 1
         for i in range(len(yy)):
           method2fraction[method][i] += 1 if min(
-              yy[:i + 1]) <= workload2ref[wl]+1e-6 else 0
+              yy[:i + 1]) <= workload2ref[wl] + 1e-6 else 0
   for method in method2fraction:
     method2fraction[method] = method2fraction[method] / total[method]
   return method2fraction

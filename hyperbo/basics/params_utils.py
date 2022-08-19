@@ -30,6 +30,23 @@ GPParams = defs.GPParams
 FINAL_PARAM_FILE_INFO = 'FINAL'
 
 
+def save_to_file(filenm: str, state: Any = None):
+  """Save to file."""
+  if not state:
+    return
+  dirnm = os.path.dirname(filenm)
+  if not gfile.Exists(dirnm):
+    gfile.MakeDirs(dirnm)
+  with gfile.GFile(filenm, 'wb') as f:
+    pickle.dump(state, f)
+
+
+def load_from_file(filenm: str):
+  with gfile.GFile(filenm, 'rb') as f:
+    state = pickle.load(f)
+  return state
+
+
 def save_params(filenm: str,
                 params: Union[GPParams, Dict[str, Any]],
                 state: Any = None):
@@ -102,7 +119,7 @@ def encode_model_filename(config: ml_collections.ConfigDict):
   model_key = ''
   if config.data_loader_name == 'pd1':
     model_key = '-'.join(
-        (config.test_workload, str(config.seed), config.mean_func_name,
+        (config.test_dataset_index, str(config.seed), config.mean_func_name,
          config.cov_func_name, str(config.init_params.config['mlp_features']),
          config.init_params.config['objective'],
          config.init_params.config['method'],
@@ -130,20 +147,26 @@ def encode_model_filename(config: ml_collections.ConfigDict):
     raise NotImplementedError(
         f'Filename encoder not implemented for {config.data_loader_name}')
 
-  def get_path(additional_info=FINAL_PARAM_FILE_INFO):
+  def get_path(additional_info=FINAL_PARAM_FILE_INFO, model_key_only=False):
     """Generate the path to save model parameters.
 
     Args:
       additional_info: a string or int that will be appended at the end of the
         filename to encode additional information.
+      model_key_only: only return model key if True; otherwise full path.
 
     Returns:
       full path with filename.
     """
+    if model_key_only:
+      return model_key
     if not isinstance(additional_info, str):
       additional_info = str(additional_info)
-    model_file_name = '-'.join((model_key, additional_info))
-    return os.path.join(config.model_dir, model_file_name + '.pkl')
+    if config.data_loader_name == 'pd1':
+      return os.path.join(config.model_dir, model_key, f'{additional_info}.pkl')
+    elif 'hpob' in config.data_loader_name:
+      model_file_name = '-'.join((model_key, additional_info))
+      return os.path.join(config.model_dir, model_file_name + '.pkl')
 
   return get_path
 
