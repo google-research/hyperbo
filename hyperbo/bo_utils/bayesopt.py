@@ -34,6 +34,14 @@ SubDataset = defs.SubDataset
 INPUT_SAMPLERS = const.INPUT_SAMPLERS
 
 
+def get_best_datapoint(sub_dataset):
+  """Return the best x, y tuple of a SubDataset."""
+  best_idx = jnp.argmax(sub_dataset.y)
+  best_datapoint = (sub_dataset.x[best_idx],
+                    sub_dataset.y[best_idx])
+  return best_datapoint
+
+
 def bayesopt(key: Any, model: gp.GP, sub_dataset_key: Union[int, str],
              query_oracle: Callable[[Any], Any], ac_func: Callable[...,
                                                                    jnp.array],
@@ -209,6 +217,7 @@ def run_bayesopt(
     key, subkey = jax.random.split(key)
     model.train(subkey, get_params_path, callback=callback)
   if isinstance(queried_sub_dataset, SubDataset):
+    best_query = get_best_datapoint(queried_sub_dataset)
     sub_dataset = simulated_bayesopt(
         model=model,
         sub_dataset_key=sub_dataset_key,
@@ -216,8 +225,7 @@ def run_bayesopt(
         ac_func=ac_func,
         iters=iters)
     return (sub_dataset.x,
-            sub_dataset.y), (queried_sub_dataset.x,
-                             queried_sub_dataset.y), model.params.__dict__
+            sub_dataset.y), best_query, model.params.__dict__
   else:
     if data_loader_name not in INPUT_SAMPLERS:
       raise NotImplementedError(
