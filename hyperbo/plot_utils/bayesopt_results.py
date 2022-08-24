@@ -98,6 +98,8 @@ def get_exp_result(dirnm,
   res = res[1]
   if not res and not retry:
     return None
+  res['config']['init_params'] = {}
+  res['config']['warp_func'] = {}
   yy = res['observations'][1].flatten()
   yq = res['queries'][1].flatten()
 
@@ -135,39 +137,47 @@ def get_exp_result(dirnm,
 
 def get_hpob_exp(filenm, unique_id, verbose=True):
   """Get result from one bo run."""
-  res = params_utils.load_params(filenm, use_gpparams=False, include_state=True)
-  if not res:
+  results = params_utils.load_params(
+      filenm, use_gpparams=False, include_state=True)
+  if not results:
     return None
-  if not isinstance(res, tuple):
-    print(res)
-  res = res[1]
+  if not isinstance(results, tuple):
+    print(results)
+  results = results[1]
 
   def output_warper_inverse(y):
     return -np.exp(-y) + 1e-6 + 1.
+  for _, res in results.items():
+    yy = res['observations'][1].flatten()
+    yq = res['queries'][1].flatten()
+    res['max_raw_query'] = max(yq)
+    res['config']['warp_func'] = {}
+    res['config']['init_params']['model'] = {}
 
-  yy = res['observations'][1].flatten()
-  yq = res['queries'][1].flatten()
+    config = config_dict.ConfigDict(res['config'])
 
-  config = config_dict.ConfigDict(res['config'])
-  config.init_params = config_dict.ConfigDict(config.init_params)
+    if config.output_log_warp:
+      yy = output_warper_inverse(yy)
+      yq = output_warper_inverse(yq)
 
-  if config.output_log_warp:
-    yy = output_warper_inverse(yy)
-    yq = output_warper_inverse(yq)
-
-  get_model_key = params_utils.encode_model_filename(config)
-  model_key = get_model_key(model_key_only=True)
-  exp_key = '-'.join((model_key, config.test_dataset_index, config.test_seed,
-                      config.ac_func_name, config.method))
-
-  maxy = max(max(yy), max(yq))
-  regret_array = [maxy - max(yy[:j + 1]) for j in range(len(yy))]
+    get_model_key = params_utils.encode_model_filename(config)
+    res['config']['init_params'] = {}
+    model_key = get_model_key(model_key_only=True)
+    exp_key = '-'.join((model_key, config.test_dataset_index, config.test_seed,
+                        config.ac_func_name, config.method))
+    maxy = max(max(yy), max(yq))
+    res['max_query'] = max(yq)
+    res['queries'] = []
+    regret_array = [maxy - max(yy[:j + 1]) for j in range(len(yy))]
+    res['regret_array'] = regret_array
+    res['yy'] = yy
+    res['maxy'] = maxy
   if verbose:
     print(f'filenm={filenm}, \n'
           f'len(regret)={len(regret_array)}, \n'
           f'final regret={regret_array[-1]} \n')
-  print((exp_key, unique_id), flush=True)
-  return (exp_key, unique_id), (regret_array, yy, maxy)
+    print((exp_key, unique_id), flush=True)
+  return (exp_key, unique_id), results
 
 
 def get_multi_hpob_exp(kwargs):
