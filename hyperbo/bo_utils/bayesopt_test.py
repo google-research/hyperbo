@@ -98,8 +98,8 @@ class BayesOptTest(parameterized.TestCase):
 
     self.assertEqual(observations[0].shape, (3, 5))
     self.assertEqual(observations[1].shape, (3, 1))
-    self.assertEqual(queries[0].shape, (30, 5))
-    self.assertEqual(queries[1].shape, (30, 1))
+    self.assertEqual(queries[0].shape, (5,))
+    self.assertEqual(queries[1], max(queried_sub_dataset.y))
 
 
 if __name__ == '__main__':
