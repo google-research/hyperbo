@@ -97,8 +97,6 @@ def get_exp_result(dirnm,
   res = res[1]
   if not res and not retry:
     return None
-  res['config']['init_params'] = {}
-  res['config']['warp_func'] = {}
   yy = res['observations'][1].flatten()
   yq = res['queries'][1].flatten()
 
@@ -134,29 +132,37 @@ def get_exp_result(dirnm,
   return (workload, unique_id), (regret_array, yy, maxy)
 
 
-def process_hpob_results(results, verbose=True):
+def add_regret_array(res):
+  """Add regret array to result dict with observations."""
+  yy = res['observations'][1].flatten()
+  best_query_y = res['best_query'][1]
+  # if output_log_warp:
+  #   yy = output_warper_inverse(yy)
+  #   best_query_y = output_warper_inverse(best_query_y)
+  maxy = max(max(yy), best_query_y)
+  regret_array = []
+  maxy_tmp = -np.inf
+  for j in range(len(yy)):
+    maxy_tmp = max(maxy_tmp, yy[j])
+    regret_array.append(maxy - maxy_tmp)
+  res['regret_array'] = regret_array
+  res['maxy'] = maxy
+  # res.pop('train_sub_dataset_keys')
+  return res
+
+
+def process_results(results, verbose=True):
   """Get result from one bo run."""
   if not results:
     return None
 
-  def output_warper_inverse(y):
-    return -np.exp(-y) + 1e-6 + 1.
+  # def output_warper_inverse(y):
+  #   return -np.exp(-y) + 1e-6 + 1.
 
   for exp_key, res in results.items():
-    yy = res['observations'][1].flatten()
-    best_query_y = res['best_query'][1]
-
-    if 'output_log_warp' in exp_key:
-      yy = output_warper_inverse(yy)
-      best_query_y = output_warper_inverse(best_query_y)
-
-    exp_key = '-'.join((res['search_space'], res['sub_dataset_key']))
-    maxy = max(max(yy), best_query_y)
-    regret_array = [maxy - max(yy[:j + 1]) for j in range(len(yy))]
-    res['regret_array'] = regret_array
-    res['maxy'] = maxy
-    res.pop('train_sub_dataset_keys')
+    res = add_regret_array(res)
     if verbose:
+      regret_array = res['regret_array']
       print(f'exp_key={exp_key}, \n'
             f'len(regret)={len(regret_array)}, \n'
             f'final regret={regret_array[-1]} \n')

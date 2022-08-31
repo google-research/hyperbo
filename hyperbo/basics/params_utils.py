@@ -160,6 +160,8 @@ def encode_model_filename(config: ml_collections.ConfigDict):
     """
     if model_key_only:
       return model_key
+    if not isinstance(config.model_dir, str):
+      raise ValueError(f'config.model_dir={config.model_dir} is not valid.')
     if not isinstance(additional_info, str):
       additional_info = str(additional_info)
     if config.data_loader_name == 'pd1':
