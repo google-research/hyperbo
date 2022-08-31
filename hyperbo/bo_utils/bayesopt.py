@@ -188,7 +188,7 @@ def run_bayesopt(
 
   Returns:
     All observations in (x, y) pairs returned by the bayesopt strategy and all
-    the query points in (x, y) pairs. Model params as a dict.
+    the best query point as in (x, y) pair. Model params as a dict.
   """
   logging.info(msg=f'run_synthetic is using method {method}.')
   if method in const.USE_HGP:

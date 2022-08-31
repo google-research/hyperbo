@@ -21,7 +21,6 @@ import os
 
 from hyperbo.basics import params_utils
 import utils  # local file import
-from ml_collections import config_dict
 import numpy as np
 # For backward compatibility
 plot_all = utils.plot_all
@@ -135,8 +134,38 @@ def get_exp_result(dirnm,
   return (workload, unique_id), (regret_array, yy, maxy)
 
 
-def get_hpob_exp(filenm, unique_id, verbose=True):
+def process_hpob_results(results, verbose=True):
   """Get result from one bo run."""
+  if not results:
+    return None
+
+  def output_warper_inverse(y):
+    return -np.exp(-y) + 1e-6 + 1.
+
+  for exp_key, res in results.items():
+    yy = res['observations'][1].flatten()
+    best_query_y = res['best_query'][1]
+
+    if 'output_log_warp' in exp_key:
+      yy = output_warper_inverse(yy)
+      best_query_y = output_warper_inverse(best_query_y)
+
+    exp_key = '-'.join((res['search_space'], res['sub_dataset_key']))
+    maxy = max(max(yy), best_query_y)
+    regret_array = [maxy - max(yy[:j + 1]) for j in range(len(yy))]
+    res['regret_array'] = regret_array
+    res['maxy'] = maxy
+    res.pop('train_sub_dataset_keys')
+    if verbose:
+      print(f'exp_key={exp_key}, \n'
+            f'len(regret)={len(regret_array)}, \n'
+            f'final regret={regret_array[-1]} \n')
+  return results
+
+
+def get_hpob_exp(kwarg, verbose=True):
+  """Get result from one bo run."""
+  filenm, unique_id = kwarg['filenm'], kwarg['unique_id']
   results = params_utils.load_params(
       filenm, use_gpparams=False, include_state=True)
   if not results:
@@ -147,27 +176,18 @@ def get_hpob_exp(filenm, unique_id, verbose=True):
 
   def output_warper_inverse(y):
     return -np.exp(-y) + 1e-6 + 1.
-  for _, res in results.items():
+
+  for exp, res in results.items():
+    exp_key = exp[0]
     yy = res['observations'][1].flatten()
-    yq = res['queries'][1].flatten()
-    res['max_raw_query'] = max(yq)
-    res['config']['warp_func'] = {}
-    res['config']['init_params']['model'] = {}
+    best_query_y = res['best_query'][1]
 
-    config = config_dict.ConfigDict(res['config'])
-
-    if config.output_log_warp:
+    if 'output_log_warp' in exp_key:
       yy = output_warper_inverse(yy)
-      yq = output_warper_inverse(yq)
+      best_query_y = output_warper_inverse(best_query_y)
 
-    get_model_key = params_utils.encode_model_filename(config)
-    res['config']['init_params'] = {}
-    model_key = get_model_key(model_key_only=True)
-    exp_key = '-'.join((model_key, config.test_dataset_index, config.test_seed,
-                        config.ac_func_name, config.method))
-    maxy = max(max(yy), max(yq))
-    res['max_query'] = max(yq)
-    res['queries'] = []
+    exp_key = '-'.join((res['search_space'], res['sub_dataset_key']))
+    maxy = max(max(yy), best_query_y)
     regret_array = [maxy - max(yy[:j + 1]) for j in range(len(yy))]
     res['regret_array'] = regret_array
     res['yy'] = yy
@@ -184,12 +204,12 @@ def get_multi_hpob_exp(kwargs):
   res = []
   print(f'in multi exp - kwargs: {len(kwargs)}', flush=True)
   for kwarg in kwargs:
-    res.append(get_hpob_exp(**kwarg))
+    res.append(get_hpob_exp(kwarg))
   print(f'in multi exp: {len(res)}', flush=True)
   return res
 
 
-def hpob_results(filenames,
+def hpob_results(kwargs,
                  verbose=False,
                  process_func=get_multi_hpob_exp,
                  n=100,
@@ -197,7 +217,7 @@ def hpob_results(filenames,
   """Get a dict of results aggregated over n files in a directory.
 
   Args:
-    filenames: file names of results.
+    kwargs: dict with field filenm and unique_id.
     verbose: print logging messages if True.
     process_func: function to process each result file.
     n: maximum number of sequential files to read for each parallel worker.
@@ -210,12 +230,8 @@ def hpob_results(filenames,
   kwarg_list = []
   sub_list = []
   cnt = 0
-  for i in range(len(filenames)):
-    kwarg = {
-        'filenm': filenames[i]['filenm'],
-        'unique_id': i,
-        'verbose': verbose
-    }
+  for kwarg in kwargs:
+    kwarg['verbose'] = verbose
     sub_list.append(kwarg)
     cnt += 1
     if cnt % n == 0:
@@ -227,7 +243,7 @@ def hpob_results(filenames,
   results = []
   if parallel:
     results = run_in_parallel(process_func, kwarg_list,
-                              min(len(filenames) // n, 100))
+                              min(len(kwargs) // n, 100))
   else:
     for kwarg in kwarg_list:
       r = process_func(**kwarg)
