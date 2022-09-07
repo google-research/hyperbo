@@ -47,23 +47,26 @@ def plot_with_upper_lower(x,
   ax.plot(x, line, color=color, **plot_kwargs)
 
 
-def plot_array_mean_std(array, color, ax=None, axis=0, **plot_kwargs):
+def plot_array_mean_std(array, color, x=None, ax=None, axis=0, **plot_kwargs):
   """Plot experiment results stored in array."""
   mean, std = np.mean(array, axis=axis), np.std(array, axis=axis)
-  x = range(1, len(mean) + 1)
+  if x is None:
+    x = range(1, len(mean) + 1)
   plot_with_upper_lower(x, mean, mean - std, mean + std, color, ax,
                         **plot_kwargs)
 
 
 def plot_array_median_percentile(array,
                                  color,
+                                 x=None,
                                  ax=None,
                                  percentile=20,
                                  **plot_kwargs):
   """Plot experiment results stored in array."""
   lower, median, upper = np.percentile(
       array, [percentile, 50, 100 - percentile], axis=0)
-  x = range(1, len(median) + 1)
+  if x is None:
+    x = range(1, len(median) + 1)
   plot_with_upper_lower(x, median, lower, upper, color, ax, **plot_kwargs)
 
 

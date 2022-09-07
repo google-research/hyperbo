@@ -41,6 +41,8 @@ PD1 = {
     ('phase1', 'unmatched'): '../pd1/pd1_unmatched_phase1_results.jsonl',
 }
 
+LESS_POINTS_WORKLOAD = 'imagenet_resnet50,imagenet,resnet,resnet50,1024'
+
 HPOB_ROOT_DIR = 'hpob-data/'
 
 

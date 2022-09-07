@@ -28,7 +28,6 @@ import jax
 import jax.numpy as jnp
 import jaxopt
 import numpy as np
-import tensorflow as tf
 
 SubDataset = defs.SubDataset
 INPUT_SAMPLERS = const.INPUT_SAMPLERS

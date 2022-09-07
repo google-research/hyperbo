@@ -42,6 +42,8 @@ def save_to_file(filenm: str, state: Any = None):
 
 
 def load_from_file(filenm: str):
+  if not gfile.Exists(filenm):
+    raise FileNotFoundError(f'{filenm} does not exist.')
   with gfile.GFile(filenm, 'rb') as f:
     state = pickle.load(f)
   return state
@@ -56,24 +58,14 @@ def save_params(filenm: str,
   params = jax.tree_map(lambda x: str(x) if callable(x) else x, params)
   if state:
     state = jax.tree_map(lambda x: str(x) if callable(x) else x, state)
-  dirnm = os.path.dirname(filenm)
-  if not gfile.Exists(dirnm):
-    gfile.MakeDirs(dirnm)
-  with gfile.GFile(filenm, 'wb') as f:
-    pickle.dump((params, state), f)
+  save_to_file(filenm, (params, state))
 
 
 def load_params(filenm: str,
                 use_gpparams: bool = True,
                 include_state: bool = False):
   """Load from file."""
-  if not gfile.Exists(filenm):
-    msg = f'{filenm} does not exist.'
-    logging.info(msg=msg)
-    print(msg)
-    return None
-  with gfile.GFile(filenm, 'rb') as f:
-    params_dict, state = pickle.load(f)
+  params_dict, state = load_from_file(filenm)
   if use_gpparams:
     params = GPParams(**params_dict)
   else:

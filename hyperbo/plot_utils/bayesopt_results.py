@@ -27,6 +27,21 @@ plot_all = utils.plot_all
 COLORS = utils.COLORS
 
 
+def decode_exp_key(exp_key, data_loader_name):
+  """Decode exp_key from synthetic.py to method - list of result dict."""
+  elements = exp_key.split('-')
+  if data_loader_name == 'pd1':
+    test_dataset_index, seed, mean_func_name, cov_func_name, mlp_features, objective, opt_method, max_training_step, batch_size, num_remove, p_observed, p_remove, _, _, acfun, method = elements
+    return acfun, int(num_remove), test_dataset_index, '-'.join(
+        (seed, mean_func_name, cov_func_name, mlp_features, objective,
+         opt_method, max_training_step, batch_size, p_observed, p_remove,
+         method))
+  elif 'hpob' in data_loader_name:
+    return
+  else:
+    raise NotImplementedError(f'{data_loader_name} Not Implemented.')
+
+
 def run_in_parallel(function, list_of_kwargs_to_function, num_workers):
   """Run a function on a list of kwargs in parallel with ThreadPoolExecutor.
 
