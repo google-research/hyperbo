@@ -64,6 +64,15 @@ def bayesopt(key: Any, model: gp.GP, sub_dataset_key: Union[int, str],
   input_dim = model.input_dim
   for i in range(iters):
     start_time = time.time()
+    if 'retrain' in model.params.config and model.params.config['retrain'] > 0:
+      if model.params.config['objective'] in [obj.regkl, obj.regeuc]:
+        raise ValueError('Objective must include NLL to retrain.')
+      else:
+        max_training_step = model.params.config['retrain']
+        logging.info(
+            msg=f'Retraining with max_training_step = {max_training_step}.')
+        model.params.config['max_training_step'] = max_training_step
+        model.train()
     x_samples = input_sampler(key, input_dim)
     evals = ac_func(
         model=model, sub_dataset_key=sub_dataset_key, x_queries=x_samples)
@@ -86,24 +95,20 @@ def bayesopt(key: Any, model: gp.GP, sub_dataset_key: Union[int, str],
                  f'elpased_time={time.time() - start_time}')
     model.update_sub_dataset(
         eval_datapoint, sub_dataset_key=sub_dataset_key, is_append=True)
-    if 'retrain' in model.params.config and model.params.config['retrain'] > 0:
-      if model.params.config['objective'] in [obj.regkl, obj.regeuc]:
-        raise ValueError('Objective must include NLL to retrain.')
-      else:
-        max_training_step = model.params.config['retrain']
-        logging.info(
-            msg=f'Retraining with max_training_step = {max_training_step}.')
-        model.params.config['max_training_step'] = max_training_step
-        model.train()
 
   return model.dataset.get(sub_dataset_key,
                            SubDataset(jnp.empty(0), jnp.empty(0)))
 
 
-def simulated_bayesopt(model: gp.GP, sub_dataset_key: Union[int, str],
-                       queried_sub_dataset: SubDataset,
-                       ac_func: Callable[...,
-                                         jnp.array], iters: int) -> SubDataset:
+def simulated_bayesopt(
+    model: gp.GP,
+    sub_dataset_key: Union[int, str],
+    queried_sub_dataset: SubDataset,
+    ac_func: Callable[..., jnp.array],
+    iters: int,
+    train_random_key: Optional[jax.random.PRNGKeyArray] = None,
+    get_params_path: Optional[Callable[[Any], Any]] = None,
+    callback: Optional[Callable[[Any], Any]] = None) -> SubDataset:
   """Running simulated bayesopt on a set of pre-evaluated inputs x_queries.
 
   Args:
@@ -112,12 +117,30 @@ def simulated_bayesopt(model: gp.GP, sub_dataset_key: Union[int, str],
     queried_sub_dataset: sub_dataset that can be queried.
     ac_func: acquisition function handle (see acfun.py).
     iters: number of iterations in BayesOpt sequential queries.
+    train_random_key: random state for jax.random, to be used for training.
+    get_params_path: optional function handle that returns params path.
+    callback: optional callback function for loggin of training steps.
 
   Returns:
     All observations after bayesopt in the form of an (x_observed, y_observed)
     tuple. These observations include those made before bayesopt.
   """
   for _ in range(iters):
+    if 'retrain' in model.params.config and model.params.config[
+        'retrain'] > 0 and model.dataset[sub_dataset_key].x.shape[0] > 0:
+      if model.params.config['objective'] in [obj.regkl, obj.regeuc]:
+        raise ValueError('Objective must include NLL to retrain.')
+      else:
+        max_training_step = model.params.config['retrain']
+        logging.info(
+            msg=('Retraining with max_training_step = '
+                 f'{max_training_step}.'))
+        model.params.config['max_training_step'] = max_training_step
+        if train_random_key is not None:
+          train_random_key, subkey = jax.random.split(train_random_key)
+        else:
+          subkey = None
+        model.train(subkey, get_params_path=get_params_path, callback=callback)
     evals = ac_func(
         model=model,
         sub_dataset_key=sub_dataset_key,
@@ -127,16 +150,6 @@ def simulated_bayesopt(model: gp.GP, sub_dataset_key: Union[int, str],
         select_idx]
     model.update_sub_dataset(
         eval_datapoint, sub_dataset_key=sub_dataset_key, is_append=True)
-    if 'retrain' in model.params.config and model.params.config['retrain'] > 0:
-      if model.params.config['objective'] in [obj.regkl, obj.regeuc]:
-        raise ValueError('Objective must include NLL to retrain.')
-      else:
-        max_training_step = model.params.config['retrain']
-        logging.info(
-            msg=('Retraining with max_training_step = '
-                 f'{max_training_step}.'))
-        model.params.config['max_training_step'] = max_training_step
-        model.train()
 
   return model.dataset.get(sub_dataset_key,
                            SubDataset(jnp.empty(0), jnp.empty(0)))
@@ -157,7 +170,8 @@ def run_bayesopt(
     init_model: bool = False,
     data_loader_name: str = '',
     get_params_path: Optional[Callable[[Any], Any]] = None,
-    callback: Optional[Callable[[Any], Any]] = None):
+    callback: Optional[Callable[[Any], Any]] = None,
+    save_retrain_model: bool = False):
   """Running bayesopt experiment with synthetic data.
 
   Args:
@@ -184,6 +198,7 @@ def run_bayesopt(
     data_loader_name: data loader name, e.g. pd1, hpob.
     get_params_path: optional function handle that returns params path.
     callback: optional callback function for loggin of training steps.
+    save_retrain_model: save retrained model iif True.
 
   Returns:
     All observations in (x, y) pairs returned by the bayesopt strategy and all
@@ -210,6 +225,8 @@ def run_bayesopt(
       warp_func=warp_func)
   key = init_random_key
   if init_model:
+    assert init_random_key is not None, ('Cannot initialize with '
+                                         'init_random_key == None.')
     key, subkey = jax.random.split(key)
     model.initialize_params(subkey)
     # Infer GP parameters.
@@ -222,16 +239,18 @@ def run_bayesopt(
         sub_dataset_key=sub_dataset_key,
         queried_sub_dataset=queried_sub_dataset,
         ac_func=ac_func,
-        iters=iters)
+        iters=iters,
+        train_random_key=key,
+        get_params_path=get_params_path if save_retrain_model else None,
+        callback=callback if save_retrain_model else None)
     return (sub_dataset.x,
             sub_dataset.y), best_query, model.params.__dict__
   else:
     if data_loader_name not in INPUT_SAMPLERS:
       raise NotImplementedError(
           f'Input sampler for {data_loader_name} not found.')
-    _, sample_key = jax.random.split(key)
     sub_dataset = bayesopt(
-        key=sample_key,
+        key=key,
         model=model,
         sub_dataset_key=sub_dataset_key,
         query_oracle=queried_sub_dataset,

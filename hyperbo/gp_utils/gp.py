@@ -394,6 +394,15 @@ class GP:
       dot_prod_bias = self.params.model['dot_prod_bias']
       logging.info(msg=f'{flag} dot_prod_sigma: '
                    f'{dot_prod_sigma.shape} and dot_prod_bias: {dot_prod_bias}')
+    if self.cov_func in [
+        kernel.matern32, kernel.matern52, kernel.squared_exponential
+    ]:
+      if check_param('lengthscale', jnp.ndarray):
+        flag = 'Retained'
+      elif check_param('lengthscale', float):
+        uni_lengthscale = self.params.model['lengthscale']
+        self.params.model['lengthscale'] = jnp.ones(
+            last_layer_size) * uni_lengthscale
     self.rng = key
 
   def set_dataset(self, dataset: Union[List[Union[Tuple[jnp.ndarray, ...],

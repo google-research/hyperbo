@@ -38,6 +38,7 @@ def plot_with_upper_lower(x,
                           upper,
                           color='r',
                           ax=None,
+                          set_xticks=False,
                           **plot_kwargs):
   """Plot mean and standard deviation with inputs x."""
   if ax is None:
@@ -45,6 +46,8 @@ def plot_with_upper_lower(x,
     ax = plt.gca()
   ax.fill_between(x, lower, upper, alpha=.1, color=color)
   ax.plot(x, line, color=color, **plot_kwargs)
+  if x is not None and set_xticks:
+    ax.set_xticks(x)
 
 
 def plot_array_mean_std(array, color, x=None, ax=None, axis=0, **plot_kwargs):
@@ -131,7 +134,7 @@ def set_violin_axis_style(ax, labels):
 
 def plot_summary(labels,
                  label2array,
-                 xlim=100,
+                 xlim=(1, 100),
                  ylim=None,
                  logscale=True,
                  ylabel='Regret',
@@ -182,7 +185,7 @@ def plot_summary(labels,
            method=method,
            colors=colors,
            **kwargs)
-  axes[0].set_xlim(0, xlim)
+  axes[0].set_xlim(xlim)
   if uppercenter_legend:
     axes[0].legend(
         loc='upper center',
@@ -202,17 +205,24 @@ def plot_summary(labels,
   labels = violin_labels
   for i, trial in enumerate(violin_trials):
     data = [np.array(label2array[la])[:, trial] for la in labels]
-    quartile1, medians, quartile3 = np.percentile(
-        np.array(data), [20, 50, 80], axis=1)
+    quantile1, medians, quantile3 = [], [], []
+    for d in data:
+      q1, q2, q3 = np.percentile(d, [20, 50, 80])
+      quantile1.append(q1)
+      medians.append(q2)
+      quantile3.append(q3)
     parts = axes[i + 1].violinplot(data, showmedians=False, showextrema=False)
     inds = np.arange(1, len(medians) + 1)
     axes[i + 1].scatter(
         inds, medians, marker='o', color='white', s=30, zorder=3)
     axes[i + 1].vlines(
-        inds, quartile1, quartile3, color='k', linestyle='-', lw=5)
+        inds, quantile1, quantile3, color='k', linestyle='-', lw=5)
     for pc, la in zip(parts['bodies'], labels):
       pc.set_facecolor(colors[la])
       pc.set_edgecolor('black')
       pc.set_alpha(1)
-    axes[i + 1].set_title(f'BO Iters = {trial+1}')
+    if 'x' in kwargs:
+      axes[i + 1].set_title(f'{xlabel} = {kwargs["x"][trial]}')
+    else:
+      axes[i + 1].set_title(f'{xlabel} = {trial+1}')
     set_violin_axis_style(axes[i + 1], labels)

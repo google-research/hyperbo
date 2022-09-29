@@ -156,10 +156,15 @@ def encode_model_filename(config: ml_collections.ConfigDict):
       raise ValueError(f'config.model_dir={config.model_dir} is not valid.')
     if not isinstance(additional_info, str):
       additional_info = str(additional_info)
+    if config.method == 'stbo':
+      model_spec = '-'.join((model_key, config.ac_func_name, config.method))
+    else:
+      model_spec = model_key
     if config.data_loader_name == 'pd1':
-      return os.path.join(config.model_dir, model_key, f'{additional_info}.pkl')
+      return os.path.join(config.model_dir, model_spec,
+                          f'{additional_info}.pkl')
     elif 'hpob' in config.data_loader_name:
-      model_file_name = '-'.join((model_key, additional_info))
+      model_file_name = '-'.join((model_spec, additional_info))
       return os.path.join(config.model_dir, model_file_name + '.pkl')
 
   return get_path
