@@ -199,8 +199,8 @@ class GPTest(parameterized.TestCase):
       self.assertAlmostEqual(mu[i], mu_[i])
       self.assertAlmostEqual(mu[i], mu_model[i])
     for a, b, c in zip(jnp.diag(cov), var.flatten(), jnp.diag(cov_model)):
-      self.assertAlmostEqual(a, b)
-      self.assertAlmostEqual(c, b + params.model['noise_variance'])
+      self.assertAlmostEqual(a, b, places=6)
+      self.assertAlmostEqual(c, b + params.model['noise_variance'], places=6)
     for i in range(len(cov)):
       for j in range(len(cov[0])):
         if i != j:
