@@ -521,7 +521,9 @@ def hpob_dataset(search_space_index,
                  test_dataset_id_index,
                  test_seed,
                  output_log_warp=True,
-                 test_only=False):
+                 test_only=False,
+                 n_remain=-1,
+                 remain_random_key=None):
   """Load the original finite hpob dataset by search space and test dataset id.
 
   To use the HPO-B dataset, download data and import hpob_handler from
@@ -534,6 +536,9 @@ def hpob_dataset(search_space_index,
       test2, test3, test4.
     output_log_warp: log warp on output with max assumed to be 1.
     test_only: Loads only the meta-test split from HPO-B-v3.
+    n_remain: number of trainnig datapoints per training task.
+      Keep all datapoints if n_remain <= 0.
+    remain_random_key: Jax PRNGKey.
 
   Returns:
     dataset: Dict[str, SubDataset], mapping from study group to a SubDataset.
@@ -543,6 +548,9 @@ def hpob_dataset(search_space_index,
   # pylint: disable=g-bad-import-order,g-import-not-at-top
   from hpob import hpob_handler
   # pylint: enable=g-bad-import-order,g-import-not-at-top
+  if n_remain > 0:
+    assert remain_random_key is not None, ('remain_random_key must not be None '
+                                           f'for n_remain={n_remain}')
   if test_only:
     handler = hpob_handler.HPOBHandler(root_dir=HPOB_ROOT_DIR, mode='v3-test')
   else:
@@ -569,8 +577,18 @@ def hpob_dataset(search_space_index,
   output_warper = get_output_warper(output_log_warp)
   if not test_only:
     for dataset_id in handler.meta_train_data[search_space]:
-      train_x = np.array(handler.meta_train_data[search_space][dataset_id]['X'])
-      train_y = np.array(handler.meta_train_data[search_space][dataset_id]['y'])
+      train_x = jnp.array(
+          handler.meta_train_data[search_space][dataset_id]['X'])
+      train_y = jnp.array(
+          handler.meta_train_data[search_space][dataset_id]['y'])
+      if n_remain > 0 and train_x.shape[0] > n_remain:
+        remain_random_key, subkey = jax.random.split(remain_random_key)
+        indices = jax.random.permutation(subkey,
+                                         jnp.arange(train_x.shape[0]))
+        indices = indices[:n_remain]
+        train_x = train_x[indices]
+        train_y = train_y[indices]
+      train_x = output_warper(train_x)
       train_y = output_warper(train_y)
       dataset[dataset_id] = SubDataset(x=train_x, y=train_y)
   if test_seed in ['test0', 'test1', 'test2', 'test3', 'test4']:

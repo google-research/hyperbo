@@ -35,6 +35,8 @@ INPUT_SAMPLERS = const.INPUT_SAMPLERS
 
 def get_best_datapoint(sub_dataset):
   """Return the best x, y tuple of a SubDataset."""
+  if sub_dataset.y.shape[0] == 0:
+    return None
   best_idx = jnp.argmax(sub_dataset.y)
   best_datapoint = (sub_dataset.x[best_idx],
                     sub_dataset.y[best_idx])

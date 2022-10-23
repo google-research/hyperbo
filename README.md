@@ -41,7 +41,7 @@ See tests.
 ## Citing
 ```
 @article{wang2021hyperbo,
-  title={Pre-trained Gaussian processes for Bayesian optimization},
+  title={Pre-training helps Bayesian optimization too},
   author={Wang, Zi and Dahl, George E and Swersky, Kevin and Lee, Chansoo and Mariet, Zelda and Nado, Zachary and Gilmer, Justin and Snoek, Jasper and Ghahramani, Zoubin},
   journal={arXiv preprint arXiv:2109.08215},
   year={2022}
