@@ -118,6 +118,8 @@ def encode_model_filename(config: ml_collections.ConfigDict):
          str(config.init_params.config['max_training_step']),
          str(config.init_params.config['batch_size']), str(config.num_remove),
          str(config.p_observed), str(config.p_remove)))
+    if 'num_irrelevant' in config and config.num_irrelevant:
+      model_key = '-'.join((model_key, config.num_irrelevant))
   elif 'hpob' in config.data_loader_name:
     model_key = '-'.join(
         (config.search_space_index, str(config.seed), config.mean_func_name,

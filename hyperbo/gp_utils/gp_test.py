@@ -72,7 +72,7 @@ class GPTest(parameterized.TestCase):
       params.config['mlp_features'] = (8,)
       bf.init_mlp_with_shape(key, params, vx.shape)
     elif cov_func == kernel.dot_product_mlp:
-      params.model['dot_prod_sigma'] = jax.random.normal(key, (8, 8 * 2))
+      params.model['dot_prod_sigma'] = 0.1
       params.model['dot_prod_bias'] = 0.
       params.config['mlp_features'] = (8,)
       bf.init_mlp_with_shape(key, params, vx.shape)
@@ -109,7 +109,7 @@ class GPTest(parameterized.TestCase):
     if cov_func == kernel.squared_exponential_mlp:
       init_params.config['mlp_features'] = None
     elif cov_func == kernel.dot_product_mlp:
-      init_params.model['dot_prod_sigma'] = None
+      init_params.model['dot_prod_sigma'] = 0.1
       init_params.model['dot_prod_bias'] = 0.
       init_params.config['mlp_features'] = None
 

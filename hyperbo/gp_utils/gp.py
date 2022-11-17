@@ -378,23 +378,6 @@ class GP:
       logging.info(msg=f'{flag} linear_mean: '
                    f'{jax.tree_map(jnp.shape, linear_mean)}')
     if self.cov_func in [
-        kernel.dot_product_kumar, kernel.dot_product_mlp, kernel.dot_product
-    ]:
-      if check_param('dot_prod_sigma', jnp.ndarray) and check_param(
-          'dot_prod_bias', float):
-        flag = 'Retained'
-      else:
-        key, subkey = jax.random.split(key)
-        self.params.model['dot_prod_sigma'] = jax.random.normal(
-            subkey, (last_layer_size, last_layer_size * 2))
-        key, subkey = jax.random.split(key)
-        self.params.model['dot_prod_bias'] = jax.random.normal(subkey)
-        flag = 'Initialized'
-      dot_prod_sigma = self.params.model['dot_prod_sigma']
-      dot_prod_bias = self.params.model['dot_prod_bias']
-      logging.info(msg=f'{flag} dot_prod_sigma: '
-                   f'{dot_prod_sigma.shape} and dot_prod_bias: {dot_prod_bias}')
-    if self.cov_func in [
         kernel.matern32, kernel.matern52, kernel.squared_exponential
     ]:
       if check_param('lengthscale', jnp.ndarray):
@@ -502,7 +485,7 @@ class GP:
                                   distance=utils.kl_multivariate_normal
                                  ) -> float:
     """Compute regularizer on sample mean and sample covariance."""
-    return obj.sample_mean_cov_regularizer(
+    return obj.multivariate_normal_divergence(
         mean_func=self.mean_func,
         cov_func=self.cov_func,
         params=self.params,

@@ -43,6 +43,35 @@ def get_best_datapoint(sub_dataset):
   return best_datapoint
 
 
+def retrain_model(model: gp.GP,
+                  sub_dataset_key: Union[int, str],
+                  train_random_key: Optional[jax.random.PRNGKeyArray] = None,
+                  get_params_path: Optional[Callable[[Any], Any]] = None,
+                  callback: Optional[Callable[[Any], Any]] = None):
+  """Retrain the model with more observations on sub_dataset.
+
+  Args:
+    model: gp.GP.
+    sub_dataset_key: key of the sub_dataset for testing in dataset.
+    train_random_key: random state for jax.random, to be used for training.
+    get_params_path: optional function handle that returns params path.
+    callback: optional callback function for loggin of training steps.
+  """
+  retrain_condition = 'retrain' in model.params.config and model.params.config[
+      'retrain'] > 0 and model.dataset[sub_dataset_key].x.shape[0] > 0
+  if not retrain_condition:
+    return
+  if model.params.config['objective'] in [obj.regkl, obj.regeuc]:
+    raise ValueError('Objective must include NLL to retrain.')
+  max_training_step = model.params.config['retrain']
+  logging.info(
+      msg=('Retraining with max_training_step = '
+           f'{max_training_step}.'))
+  model.params.config['max_training_step'] = max_training_step
+  model.train(
+      train_random_key, get_params_path=get_params_path, callback=callback)
+
+
 def bayesopt(key: Any, model: gp.GP, sub_dataset_key: Union[int, str],
              query_oracle: Callable[[Any], Any], ac_func: Callable[...,
                                                                    jnp.array],
@@ -66,15 +95,7 @@ def bayesopt(key: Any, model: gp.GP, sub_dataset_key: Union[int, str],
   input_dim = model.input_dim
   for i in range(iters):
     start_time = time.time()
-    if 'retrain' in model.params.config and model.params.config['retrain'] > 0:
-      if model.params.config['objective'] in [obj.regkl, obj.regeuc]:
-        raise ValueError('Objective must include NLL to retrain.')
-      else:
-        max_training_step = model.params.config['retrain']
-        logging.info(
-            msg=f'Retraining with max_training_step = {max_training_step}.')
-        model.params.config['max_training_step'] = max_training_step
-        model.train()
+    retrain_model(model, sub_dataset_key=sub_dataset_key)
     x_samples = input_sampler(key, input_dim)
     evals = ac_func(
         model=model, sub_dataset_key=sub_dataset_key, x_queries=x_samples)
@@ -128,21 +149,16 @@ def simulated_bayesopt(
     tuple. These observations include those made before bayesopt.
   """
   for _ in range(iters):
-    if 'retrain' in model.params.config and model.params.config[
-        'retrain'] > 0 and model.dataset[sub_dataset_key].x.shape[0] > 0:
-      if model.params.config['objective'] in [obj.regkl, obj.regeuc]:
-        raise ValueError('Objective must include NLL to retrain.')
-      else:
-        max_training_step = model.params.config['retrain']
-        logging.info(
-            msg=('Retraining with max_training_step = '
-                 f'{max_training_step}.'))
-        model.params.config['max_training_step'] = max_training_step
-        if train_random_key is not None:
-          train_random_key, subkey = jax.random.split(train_random_key)
-        else:
-          subkey = None
-        model.train(subkey, get_params_path=get_params_path, callback=callback)
+    if train_random_key is not None:
+      train_random_key, subkey = jax.random.split(train_random_key)
+    else:
+      subkey = None
+    retrain_model(
+        model,
+        sub_dataset_key=sub_dataset_key,
+        train_random_key=subkey,
+        get_params_path=get_params_path,
+        callback=callback)
     evals = ac_func(
         model=model,
         sub_dataset_key=sub_dataset_key,

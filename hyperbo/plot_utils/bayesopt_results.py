@@ -100,6 +100,7 @@ def get_model(dirnm, unique_id, verbose, filenm='result.pkl', retry=True):
   return (workload, unique_id), res['params_dict']
 
 
+# TODO(wangzi): refactor functions that process the results.
 def get_exp_result(dirnm,
                    unique_id,
                    verbose,
@@ -108,8 +109,8 @@ def get_exp_result(dirnm,
                    maf=False):
   """Get result from one bo run."""
   file = os.path.join(dirnm, filenm)
-  res = params_utils.load_params(file, use_gpparams=False)
-  res = res[1]
+  res = params_utils.load_from_file(file)
+  # res = res[1]
   if not res and not retry:
     return None
   yy = res['observations'][1].flatten()
@@ -162,7 +163,6 @@ def add_regret_array(res):
     regret_array.append(maxy - maxy_tmp)
   res['regret_array'] = regret_array
   res['maxy'] = maxy
-  # res.pop('train_sub_dataset_keys')
   return res
 
 
@@ -364,7 +364,8 @@ def get_workload2result(res,
   """Returns workload2result dict.
 
   Args:
-    res: variable returned by get_results.
+    res: variable returned by get_results, dict mapping from method to
+      teststudy2y_array dict.
     error_rate: use error rate instead of regret on warped output.
     best_only: only include the best regret or error rate instead of the entire
       sequence computed from BayesOpt.

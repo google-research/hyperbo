@@ -128,10 +128,9 @@ def dot_product(params, x1, x2, warp_func=None):
   r"""Dot product kernel.
 
   Args:
-    params: parameters for the kernel. S=params['dot_prod_sigma'] and
-      B=params['dot_prod_bias']corresponds to \Sigma_p=SS^T, \sigma_0=B in
-      Section 4.2.2 of GPML book. The kernel is k(x, x') = \sigma_0^2 +
-      x^T\Sigma_p x'. S is d x d' (d' >= d) and B is a float.
+    params: parameters for the kernel. s=params['dot_prod_sigma'] and
+      b=params['dot_prod_bias'] corresponds to k(x, x') = b^2 + x^Tx' / s^2,
+      where s and b are floats.
     x1: a d-diemnsional vector that represent a single datapoint.
     x2: a d-diemnsional vector that represent a single datapoint that can be the
       same as or different from x1.
@@ -143,7 +142,7 @@ def dot_product(params, x1, x2, warp_func=None):
   """
   params_keys = ['dot_prod_sigma', 'dot_prod_bias']
   sigma, bias = retrieve_params(params, params_keys, warp_func)
-  return jnp.dot(jnp.dot(x1, jnp.dot(sigma, sigma.T)), x2.T) + jnp.square(bias)
+  return jnp.dot(x1, x2.T) / jnp.square(sigma) + jnp.square(bias)
 
 
 def with_mlp_bases(kernel):

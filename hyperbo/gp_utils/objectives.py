@@ -25,19 +25,19 @@ import jax.numpy as jnp
 retrieve_params = params_utils.retrieve_params
 
 
-def sample_mean_cov_regularizer(mean_func,
-                                cov_func,
-                                params,
-                                dataset,
-                                warp_func=None,
-                                distance=utils.kl_multivariate_normal,
-                                use_feat0=False):
-  """Compute a regularizer on sample mean and sample covariance.
+def multivariate_normal_divergence(mean_func,
+                                   cov_func,
+                                   params,
+                                   dataset,
+                                   warp_func=None,
+                                   distance=utils.kl_multivariate_normal,
+                                   use_feat0=False):
+  """Compute the multivariate normal divergence between the data and the model.
 
-  The returned regularizer aims to minimize the distance between the
-  multivariate normal specified by sample mean/covariance and the multivariate
-  normal specified by the parameterized GP. We support KL divergence as distance
-  or squared Euclidean distance.
+  The returned objective describes the distance between the multivariate normal
+  specified by sample mean/covariance and the multivariate normal specified by
+  the parameterized GP model.
+  We support KL divergence as distance or squared Euclidean distance.
 
   Args:
     mean_func: mean function handle that maps from (params, n x d input,
@@ -57,10 +57,11 @@ def sample_mean_cov_regularizer(mean_func,
     use_feat0: set to True if feat0 needs to be set in the distance function.
 
   Returns:
-    Weighted l2 regularizer on sample mean and sample covariance.
+    The divergence value between two multivariate normal distributions, one is
+    defined by the data and the other is defined by the GP model.
   """
 
-  def compute_regularizer_dataset_subset(sub_dataset):
+  def compute_metric_per_sub_dataset(sub_dataset):
     """Compute the regularizer on a subset of dataset keys."""
     if sub_dataset.y.shape[0] == 0:
       return 0.
@@ -80,16 +81,25 @@ def sample_mean_cov_regularizer(mean_func,
         cov1=cov_model,
         feat0=sub_dataset.y - mu_data[:, None] if use_feat0 else None)
 
-  return jnp.sum(
-      jnp.array([
-          compute_regularizer_dataset_subset(sub_dataset)
-          for sub_dataset in dataset.values()
-          if sub_dataset.aligned is not None
-      ]))
+  total_val = 0.
+  for sub_dataset_key, sub_dataset in dataset.items():
+    if sub_dataset.aligned is None:
+      continue
+    if sub_dataset.x.shape[0] == 0:
+      continue
+    if sub_dataset.y.shape[
+        1] == 0 or sub_dataset.y.shape[0] != sub_dataset.x.shape[0]:
+      raise ValueError(
+          (f'dataset[{sub_dataset_key}].x has shape {sub_dataset.x.shape} '
+           f'but dataset[{sub_dataset_key}].y has shape {sub_dataset.y.shape}'))
+    total_val += compute_metric_per_sub_dataset(sub_dataset)
+
+  return total_val
 
 
-sample_mean_cov_regularizer_euc = functools.partial(
-    sample_mean_cov_regularizer, distance=utils.euclidean_multivariate_normal)
+multivariate_normal_euc_distance = functools.partial(
+    multivariate_normal_divergence,
+    distance=utils.euclidean_multivariate_normal)
 
 
 def neg_log_marginal_likelihood(mean_func,
@@ -156,8 +166,8 @@ def neg_log_marginal_likelihood(mean_func,
 
 
 nll = neg_log_marginal_likelihood
-kl = sample_mean_cov_regularizer
-euc = sample_mean_cov_regularizer_euc
+kl = multivariate_normal_divergence
+euc = multivariate_normal_euc_distance
 regkl = kl
 regeuc = euc
 

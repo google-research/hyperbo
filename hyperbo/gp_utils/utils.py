@@ -74,11 +74,14 @@ def squareplus_warp(x):
   return 0.5 * (x + jnp.sqrt(x**2 + 4))
 
 
+DEFAULT_SOFTPLUS = lambda x: softplus_warp(x) + EPS
+
 DEFAULT_WARP_FUNC = {
     'constant': identity_warp,
-    'lengthscale': lambda x: softplus_warp(x) + EPS,
-    'signal_variance': lambda x: softplus_warp(x) + EPS,
-    'noise_variance': lambda x: softplus_warp(x) + EPS,
+    'lengthscale': DEFAULT_SOFTPLUS,
+    'signal_variance': DEFAULT_SOFTPLUS,
+    'noise_variance': DEFAULT_SOFTPLUS,
+    'dot_prod_sigma': DEFAULT_SOFTPLUS,
 }
 
 

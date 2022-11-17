@@ -66,6 +66,52 @@ SEARCH_SPACE2TEST_DATASETS = {
 }
 
 
+def perturb_dataset_with_flat_functions(dataset, maxval):
+  """Perturb dataset by adding observations on flat functions.
+
+  This is for an ablation study to see what happens if the "iid function samples
+  from a GP" assumption doesn't hold. We add one subdataset evaluated on a flat
+  function for each existing subdataset in dataset.
+
+  Args:
+    dataset: Dict[str, SubDataset].
+    maxval: the flat function's constant value is uniformlly chosen from [0,
+      maxval].
+
+  Returns:
+    New dataset of type Dict[str, SubDataset], with the flat functions.
+  """
+  rand_key = jax.random.PRNGKey(0)
+  flat_dataset = {}
+  for d in dataset:
+    if not isinstance(d, SubDataset):
+      raise ValueError('sub_dataset must be instantiated by SubDataset.')
+    rand_key, subkey = jax.random.split(rand_key)
+    if d.aligned:
+      flat_val = jax.random.uniform(
+          subkey, (d.y.shape), minval=0, maxval=maxval)
+      d.y = jnp.concatenate((d.y, flat_val))
+    else:
+      flat_dataset[d.name + 'flat'] = SubDataset(
+          d.x,
+          jax.random.uniform(
+              subkey, (d.y.shape), minval=0, maxval=maxval))
+  dataset.update(flat_dataset)
+  return dataset
+
+
+def sample_dataframe(key, df, p_remove=0.):
+  """Randomly sample dataframe by the removal percentage."""
+  if p_remove < 0 or p_remove >= 1:
+    raise ValueError(
+        f'p_remove={p_remove} but p_remove must be <1 and >= 0.')
+  if p_remove > 0:
+    n_remain = (1 - p_remove) * len(df)
+    n_remain = int(np.ceil(n_remain))
+    df = df.sample(n=n_remain, replace=False, random_state=key[0])
+  return df
+
+
 def get_aligned_dataset(trials,
                         study_identifier,
                         labels,
@@ -112,15 +158,12 @@ def get_aligned_dataset(trials,
           print('remaining groups: ', remain_groups)
           print('sub_df: ', sub_df.shape)
         aligned_key = ';'.join(list(groups) + [aligned_suffix])
+
+        key, subkey = jax.random.split(key, 2)
+        sub_df = sample_dataframe(subkey, sub_df, p_remove=p_remove)
+
         xx = jnp.array(sub_df[labels[:-1]])
         yy = jnp.array(sub_df[remain_groups])
-        if p_remove:
-          n = xx.shape[0]
-          sub_sampled_idx = jax.random.choice(key, n,
-                                              (int(np.ceil(1 - p_remove) * n),),
-                                              replace=False)
-          xx = xx[sub_sampled_idx]
-          yy = yy[sub_sampled_idx]
         aligned_dataset[aligned_key] = SubDataset(
             x=xx, y=yy, aligned=';'.join(remain_groups + [aligned_suffix]))
   msg = f'aligned dataset: {jax.tree_map(jnp.shape, aligned_dataset)}'
@@ -256,7 +299,8 @@ def process_dataframe(
   for la, fun in warp_func.items():
     if la in labels:
       trials.loc[:, la] = fun(trials.loc[:, la])
-
+  assert len(trials) == len(trials.dropna()), ('nan appeared after applying '
+                                               f'warp_func={warp_func}')
   key, subkey = jax.random.split(key)
   trials, sub_dataset_key, queried_sub_dataset = sample_sub_dataset(
       key=subkey,
@@ -285,6 +329,9 @@ def process_dataframe(
         p_observed=p_observed,
         verbose=verbose,
         sub_dataset_key=removed_sub_dataset_key)
+    if trials.empty:
+      raise ValueError(
+          f'All datapoints are removed. Is num_remove={num_remove} too large?')
   key, subkey = jax.random.split(key)
   aligned_dataset = get_aligned_dataset(
       trials=trials,
@@ -293,11 +340,8 @@ def process_dataframe(
       key=subkey,
       p_remove=p_remove,
       verbose=verbose)
-  if p_remove > 0:
-    key, subkey = jax.random.split(key)
-    removed_trials = trials.sample(
-        frac=p_remove, replace=False, random_state=subkey[0])
-    trials = trials.drop(removed_trials.index)
+  key, subkey = jax.random.split(key)
+  trials = sample_dataframe(subkey, trials, p_remove=p_remove)
 
   dataset = get_dataset(
       trials=trials,
@@ -318,7 +362,7 @@ def pd1(key,
         num_remove=0,
         metric_name='best_valid/error_rate',
         p_remove=0.,
-        data_files=PD1.copy()):
+        data_files=None):
   """Load PD1(Nesterov) from init2winit and pick a random study as test function.
 
   For matched dataframes, we set `aligned` to True in its trials and reflect it
@@ -344,6 +388,8 @@ def pd1(key,
     sub_dataset_key: study group key for testing in dataset.
     queried_sub_dataset: SubDataset to be queried.
   """
+  if data_files is None:
+    data_files = PD1.copy()
   all_trials = []
   for k, v in data_files.items():
     if 'pkl' in v:

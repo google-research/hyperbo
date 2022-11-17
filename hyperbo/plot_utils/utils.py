@@ -44,9 +44,16 @@ def plot_with_upper_lower(x,
   if ax is None:
     plt.figure()
     ax = plt.gca()
+  if 'n_remain' in plot_kwargs:
+    assert 'label' in plot_kwargs, 'Must provide a label for each line.'
+    if plot_kwargs['label'] == 'H* KL':
+      x = x * 242
+    else:
+      x = x * 2000
+    plot_kwargs.pop('n_remain')
   ax.fill_between(x, lower, upper, alpha=.1, color=color)
   ax.plot(x, line, color=color, **plot_kwargs)
-  if x is not None and set_xticks:
+  if set_xticks:
     ax.set_xticks(x)
 
 
@@ -75,11 +82,12 @@ def plot_array_median_percentile(array,
 
 def plot_all(label2array,
              ax,
-             logscale=True,
+             logscale_x=False,
+             logscale_y=True,
              ylabel='Regret',
              xlabel='BO Iters',
              method='mean',
-             colors=COLORS.copy(),
+             colors=None,
              **kwargs):
   """Plot all experiment results.
 
@@ -87,13 +95,16 @@ def plot_all(label2array,
     label2array: a dictionary with labels as keys and an array of results as
       values.
     ax: matplotlib.pyplot.axis.
-    logscale: use log scale for y axis if True.
+    logscale_x: use log scale for x axis if True.
+    logscale_y: use log scale for y axis if True.
     ylabel: label for y axis.
     xlabel: label for x axis.
     method: plot mean and std, or median and percentile.
     colors: dictionary mapping from label to color.
     **kwargs: other plot arguments.
   """
+  if colors is None:
+    colors = COLORS.copy()
   assert len(label2array) <= len(
       colors
   ), f'max number of lines to plot is {len(colors)} got {len(label2array)}'
@@ -116,7 +127,9 @@ def plot_all(label2array,
     elif method == 'median':
       plot_array_median_percentile(
           y_array, ax=ax, label=label, color=color, **kwargs)
-    if logscale:
+    if logscale_x:
+      ax.set_xscale('log')
+    if logscale_y:
       ax.set_yscale('log')
     ax.legend()
     ax.set_xlabel(xlabel)
@@ -136,7 +149,8 @@ def plot_summary(labels,
                  label2array,
                  xlim=(1, 100),
                  ylim=None,
-                 logscale=True,
+                 logscale_x=True,
+                 logscale_y=True,
                  ylabel='Regret',
                  xlabel='BO Iters',
                  method='mean',
@@ -144,7 +158,7 @@ def plot_summary(labels,
                  violin_trials=None,
                  violin_labels=None,
                  figsize=(24, 6),
-                 colors=COLORS.copy(),
+                 colors=None,
                  axes=None,
                  uppercenter_legend=True,
                  uppercenter_legend_ncol=3,
@@ -158,7 +172,8 @@ def plot_summary(labels,
       values.
     xlim: a tuple of the new x-axis limits.
     ylim: a tuple of the new y-axis limits.
-    logscale: use log scale for y axis if True.
+    logscale_x: use log scale for x axis if True.
+    logscale_y: use log scale for y axis if True.
     ylabel: label for y axis.
     xlabel: label for x axis.
     method: plot mean and std, or median and percentile.
@@ -166,26 +181,37 @@ def plot_summary(labels,
     violin_trials: list of trials to plot violin plots on slices of the figure.
     violin_labels: list of lables to be included in violin plots.
     figsize: a tuple describing the size of the figure.
-    colors: dictionary mapping from label to color.
+    colors: dictionary mapping from label to color. If not specified, the
+      default.
     axes: list of matplotlib.pyplot.axis objects.
     uppercenter_legend: use an upper center legend if True.
     uppercenter_legend_ncol: number of columns for the upper center legend.
     bbox_to_anchor: bbox_to_anchor of the upper center legend.
     **kwargs: other plot arguments.
+
+  Returns:
+    matplotlib figure.
+  Raises:
+    KeyError: the key 'x' is not present in kwargs when we use the 'n_remain'
+      option. The 'n_remain' option is to plot the max training datapoint figure
+      and use a different set of x ticks, defined by kwargs['x'].
   """
+  if colors is None:
+    colors = COLORS.copy()
+  n_remain = True if 'n_remain' in kwargs else False
   plt.figure(dpi=1500)
   if axes is None or len(axes) < len(violin_trials) + 1:
-    _, axes = plt.subplots(
+    fig, axes = plt.subplots(
         nrows=1, ncols=len(violin_trials) + 1, figsize=figsize)
   plot_all({la: label2array.get(la, None) for la in labels},
            axes[0],
-           logscale=logscale,
+           logscale_x=logscale_x,
+           logscale_y=logscale_y,
            ylabel=ylabel,
            xlabel=xlabel,
            method=method,
            colors=colors,
            **kwargs)
-  axes[0].set_xlim(xlim)
   if uppercenter_legend:
     axes[0].legend(
         loc='upper center',
@@ -197,6 +223,8 @@ def plot_summary(labels,
     axes[0].legend()
   if ylim:
     axes[0].set_ylim(ylim[0], ylim[1])
+  if xlim:
+    axes[0].set_xlim(xlim[0], xlim[1])
   if title:
     axes[0].set_title(title)
 
@@ -204,7 +232,26 @@ def plot_summary(labels,
     return
   labels = violin_labels
   for i, trial in enumerate(violin_trials):
-    data = [np.array(label2array[la])[:, trial] for la in labels]
+    data = []
+    if n_remain:
+      if 'x' not in kwargs:
+        raise KeyError('The key "x" is not in kwargs.')
+      x = kwargs['x']
+      num_data = round(x[trial] * 2000)
+    else:
+      num_data = kwargs['x'][trial]
+    for la in labels:
+      if n_remain and la == 'H* KL':
+        trial = None
+        for j, p in enumerate(x):
+          if p * 242 <= num_data:
+            trial = j
+          else:
+            break
+        if trial is None:
+          raise ValueError(
+              f'H* KL does not have less than {num_data} datapoints.')
+      data.append(np.array(label2array[la])[:, trial])
     quantile1, medians, quantile3 = [], [], []
     for d in data:
       q1, q2, q3 = np.percentile(d, [20, 50, 80])
@@ -222,7 +269,8 @@ def plot_summary(labels,
       pc.set_edgecolor('black')
       pc.set_alpha(1)
     if 'x' in kwargs:
-      axes[i + 1].set_title(f'{xlabel} = {kwargs["x"][trial]}')
+      axes[i + 1].set_title(f'{xlabel} = {num_data}')
     else:
       axes[i + 1].set_title(f'{xlabel} = {trial+1}')
     set_violin_axis_style(axes[i + 1], labels)
+  return fig

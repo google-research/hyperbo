@@ -76,7 +76,7 @@ class GPTest(parameterized.TestCase):
       bf.init_mlp_with_shape(key, params, vx.shape)
     elif cov_func == kernel.dot_product_mlp:
       key, _ = jax.random.split(key)
-      params.model['dot_prod_sigma'] = jax.random.normal(key, (8, 8 * 2))
+      params.model['dot_prod_sigma'] = 0.5
       params.model['dot_prod_bias'] = 0.
       params.config['mlp_features'] = (8,)
       key, _ = jax.random.split(key)
@@ -117,8 +117,7 @@ class GPTest(parameterized.TestCase):
     ]:
       init_params.model['lengthscale'] = jnp.array([0.] * 8)
     elif cov_func == kernel.dot_product_mlp:
-      init_params.model['dot_prod_sigma'] = jax.random.normal(
-          init_key, (8, 8 * 2))
+      init_params.model['dot_prod_sigma'] = 1.
       init_params.model['dot_prod_bias'] = 0.
     warp_func = DEFAULT_WARP_FUNC
 

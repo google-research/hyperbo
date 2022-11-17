@@ -25,7 +25,6 @@ from hyperbo.gp_utils import kernel
 from hyperbo.gp_utils import utils
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 DEFAULT_WARP_FUNC = utils.DEFAULT_WARP_FUNC
 X_DIM = 5
@@ -52,15 +51,14 @@ class KernelTest(parameterized.TestCase):
            'signal_variance': 1.0,
        })),
       ('dot_product', kernel.dot_product,
-       GPParams(
-           model={
-               'dot_prod_sigma': np.random.normal(size=(X_DIM, X_DIM * 2)),
-               'dot_prod_bias': 0.1,
-           })),
+       GPParams(model={
+           'dot_prod_sigma': 0.1,
+           'dot_prod_bias': 0.1,
+       })),
       ('dot_product_mlp', kernel.dot_product_mlp,
        GPParams(
            model={
-               'dot_prod_sigma': np.random.normal(size=(8, 8 * 2)),
+               'dot_prod_sigma': 0.1,
                'dot_prod_bias': 0.,
            },
            config={
@@ -82,8 +80,6 @@ class KernelTest(parameterized.TestCase):
     n1, n2 = 10, 15
     vx1 = jax.random.normal(key1, (n1, X_DIM))
     vx2 = jax.random.normal(key2, (n2, X_DIM))
-    if cov_func.__name__.startswith('dot_product'):
-      params.model['dot_prod_sigma'] = jnp.array(params.model['dot_prod_sigma'])
     if 'mlp_features' in params.config:
       bf.init_mlp_with_shape(key, params, vx1.shape)
     logging.info(msg=f'params shapes:\n{jax.tree_map(jnp.shape, params)}')
@@ -109,15 +105,14 @@ class KernelTest(parameterized.TestCase):
            'signal_variance': 1.0,
        })),
       ('dot_product', kernel.dot_product,
-       GPParams(
-           model={
-               'dot_prod_sigma': np.random.normal(size=(X_DIM, X_DIM * 2)),
-               'dot_prod_bias': 0.1,
-           })),
+       GPParams(model={
+           'dot_prod_sigma': 0.1,
+           'dot_prod_bias': 0.1,
+       })),
       ('dot_product_mlp', kernel.dot_product_mlp,
        GPParams(
            model={
-               'dot_prod_sigma': np.random.normal(size=(8, 8 * 2)),
+               'dot_prod_sigma': 0.1,
                'dot_prod_bias': 0.,
            },
            config={
