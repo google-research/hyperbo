@@ -22,12 +22,24 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 from hyperbo.basics import definitions as defs
 import jax
+import jax.numpy as jnp
 import ml_collections
+import numpy as np
 
 from tensorflow.io import gfile
 
 GPParams = defs.GPParams
 FINAL_PARAM_FILE_INFO = 'FINAL'
+
+
+def to_list_or_float(x):
+  """Transform np.ndarrray or np.float to python list and float, if any."""
+  if isinstance(x, jnp.ndarray) or isinstance(x, np.ndarray):
+    return x.tolist()
+  elif isinstance(x, np.float32) or isinstance(x, np.float64):
+    return float(x)
+  else:
+    return x
 
 
 def save_to_file(filenm: str, state: Any = None):

@@ -65,6 +65,7 @@ class AcFunTest(parameterized.TestCase):
         mean_func=mean_func,
         cov_func=cov_func,
         params=params)
+    model.rng = jax.random.PRNGKey(0)
 
     ac_eval = ac_func(model=model, sub_dataset_key=0, x_queries=x_queries)
     logging.info(msg=f'acfun = {ac_func.__name__}, eval = {ac_eval}')
@@ -109,6 +110,7 @@ class AcFunTest(parameterized.TestCase):
           mean_func=mean_func,
           cov_func=cov_func,
           params=params)
+      model.rng = jax.random.PRNGKey(0)
       return ac_func(model=model, sub_dataset_key=0, x_queries=x_queries)
     constant_lengthscale = jax.numpy.array(constant_lengthscale)
     ac_evals = jax.vmap(new_acfun)(constant_lengthscale)

@@ -18,19 +18,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-COLORS = {
-    'Rand': '#1f77b4',
-    'STBO': '#7f7f7f',
-    'STBOH': '#2ca02c',
-    'MAF': '#ff7f0e',
-    'MIMO': '#8c564b',
-    'RFGP': '#e377c2',
-    'H* NLL': '#d62728',
-    'H* KL': '#6a3d9a',
-    'H* NLLEUC': '#bcbd22',
-    'H* NLLKL': '#17becf'
-}
-
 
 def plot_with_upper_lower(x,
                           line,
@@ -46,7 +33,7 @@ def plot_with_upper_lower(x,
     ax = plt.gca()
   if 'n_remain' in plot_kwargs:
     assert 'label' in plot_kwargs, 'Must provide a label for each line.'
-    if plot_kwargs['label'] == 'H* KL':
+    if plot_kwargs['label'] == 'H-EKL':
       x = x * 242
     else:
       x = x * 2000
@@ -104,7 +91,7 @@ def plot_all(label2array,
     **kwargs: other plot arguments.
   """
   if colors is None:
-    colors = COLORS.copy()
+    raise ValueError('Must define colors: dict mapping from label to color.')
   assert len(label2array) <= len(
       colors
   ), f'max number of lines to plot is {len(colors)} got {len(label2array)}'
@@ -159,7 +146,7 @@ def plot_summary(labels,
                  violin_labels=None,
                  figsize=(24, 6),
                  colors=None,
-                 axes=None,
+                 fig_axes=None,
                  uppercenter_legend=True,
                  uppercenter_legend_ncol=3,
                  bbox_to_anchor=(0.5, 1.1),
@@ -183,7 +170,7 @@ def plot_summary(labels,
     figsize: a tuple describing the size of the figure.
     colors: dictionary mapping from label to color. If not specified, the
       default.
-    axes: list of matplotlib.pyplot.axis objects.
+    fig_axes: fig and axes returned by plt.subplots.
     uppercenter_legend: use an upper center legend if True.
     uppercenter_legend_ncol: number of columns for the upper center legend.
     bbox_to_anchor: bbox_to_anchor of the upper center legend.
@@ -197,12 +184,15 @@ def plot_summary(labels,
       and use a different set of x ticks, defined by kwargs['x'].
   """
   if colors is None:
-    colors = COLORS.copy()
+    raise ValueError('Must define colors: dict mapping from label to color.')
   n_remain = True if 'n_remain' in kwargs else False
-  plt.figure(dpi=1500)
-  if axes is None or len(axes) < len(violin_trials) + 1:
+
+  if fig_axes is None or len(fig_axes[1]) < len(violin_trials) + 1:
+    plt.figure(dpi=1500)
     fig, axes = plt.subplots(
         nrows=1, ncols=len(violin_trials) + 1, figsize=figsize)
+  else:
+    fig, axes = fig_axes
   plot_all({la: label2array.get(la, None) for la in labels},
            axes[0],
            logscale_x=logscale_x,
@@ -241,7 +231,7 @@ def plot_summary(labels,
     else:
       num_data = kwargs['x'][trial]
     for la in labels:
-      if n_remain and la == 'H* KL':
+      if n_remain and la == 'H-EKL':
         trial = None
         for j, p in enumerate(x):
           if p * 242 <= num_data:
@@ -250,7 +240,7 @@ def plot_summary(labels,
             break
         if trial is None:
           raise ValueError(
-              f'H* KL does not have less than {num_data} datapoints.')
+              f'H-EKL does not have less than {num_data} datapoints.')
       data.append(np.array(label2array[la])[:, trial])
     quantile1, medians, quantile3 = [], [], []
     for d in data:

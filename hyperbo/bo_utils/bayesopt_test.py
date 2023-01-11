@@ -90,7 +90,8 @@ class BayesOptTest(parameterized.TestCase):
         cov_func=cov_func,
         init_params=params,
         ac_func=ac_func,
-        iters=3)
+        iters=3,
+        init_random_key=key)
 
     logging.info(
         msg=f'observations: {observations}, best query:{max(queries[1])}')

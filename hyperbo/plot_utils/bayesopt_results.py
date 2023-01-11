@@ -24,7 +24,6 @@ import utils  # local file import
 import numpy as np
 # For backward compatibility
 plot_all = utils.plot_all
-COLORS = utils.COLORS
 
 
 def decode_exp_key(exp_key, data_loader_name):

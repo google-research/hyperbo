@@ -629,8 +629,7 @@ def hpob_dataset(search_space_index,
           handler.meta_train_data[search_space][dataset_id]['y'])
       if n_remain > 0 and train_x.shape[0] > n_remain:
         remain_random_key, subkey = jax.random.split(remain_random_key)
-        indices = jax.random.permutation(subkey,
-                                         jnp.arange(train_x.shape[0]))
+        indices = jax.random.permutation(subkey, train_x.shape[0])
         indices = indices[:n_remain]
         train_x = train_x[indices]
         train_y = train_y[indices]

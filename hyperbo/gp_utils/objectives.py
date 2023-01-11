@@ -30,8 +30,7 @@ def multivariate_normal_divergence(mean_func,
                                    params,
                                    dataset,
                                    warp_func=None,
-                                   distance=utils.kl_multivariate_normal,
-                                   use_feat0=False):
+                                   distance=utils.kl_multivariate_normal):
   """Compute the multivariate normal divergence between the data and the model.
 
   The returned objective describes the distance between the multivariate normal
@@ -54,7 +53,6 @@ def multivariate_normal_divergence(mean_func,
       parameter.
     distance: distance function; currently support utils.kl_multivariate_normal
       or utils.euclidean_multivariate_normal.
-    use_feat0: set to True if feat0 needs to be set in the distance function.
 
   Returns:
     The divergence value between two multivariate normal distributions, one is
@@ -78,10 +76,10 @@ def multivariate_normal_divergence(mean_func,
         mu0=mu_data,
         cov0=cov_data,
         mu1=mu_model,
-        cov1=cov_model,
-        feat0=sub_dataset.y - mu_data[:, None] if use_feat0 else None)
+        cov1=cov_model)
 
   total_val = 0.
+  num_sub_datasets = 0
   for sub_dataset_key, sub_dataset in dataset.items():
     if sub_dataset.aligned is None:
       continue
@@ -93,8 +91,11 @@ def multivariate_normal_divergence(mean_func,
           (f'dataset[{sub_dataset_key}].x has shape {sub_dataset.x.shape} '
            f'but dataset[{sub_dataset_key}].y has shape {sub_dataset.y.shape}'))
     total_val += compute_metric_per_sub_dataset(sub_dataset)
+    num_sub_datasets += 1
 
-  return total_val
+  if num_sub_datasets == 0:
+    return 0.
+  return total_val / num_sub_datasets
 
 
 multivariate_normal_euc_distance = functools.partial(
@@ -107,7 +108,8 @@ def neg_log_marginal_likelihood(mean_func,
                                 params,
                                 dataset,
                                 warp_func=None,
-                                exclude_aligned=True):
+                                exclude_aligned=True,
+                                return_key2nll=False):
   """Compute the negative of marginal likelihood of a (multi-task) GP.
 
   Args:
@@ -123,9 +125,12 @@ def neg_log_marginal_likelihood(mean_func,
     warp_func: optional dictionary that specifies the warping function for each
       parameter.
     exclude_aligned: exclude sub-datasets that are aligned.
+    return_key2nll: return total_nll together with the dictionary mapping from
+      sub-dataset key to its corresponding nll value.
 
   Returns:
-    Negative log marginal likelihood.
+    Negative log marginal likelihood if return_key2nll is False; otherwise a
+    tuple consisting of total nll and the sub-dataset key to nll dictionary.
   """
 
   def compute_nll_sub_dataset(vx, vy):
@@ -143,12 +148,20 @@ def neg_log_marginal_likelihood(mean_func,
     return nll_val
 
   total_nll = 0.
-  for s in dataset.values():
+  key2nll = {}
+  num_sub_datasets = 0
+  for k, s in dataset.items():
     if exclude_aligned and s.aligned is not None:
       continue
     if s.x.shape[0] == 0:
       continue
-    total_nll += compute_nll_sub_dataset(s.x, s.y)
+    key2nll[k] = compute_nll_sub_dataset(s.x, s.y)
+    total_nll += key2nll[k]
+    num_sub_datasets += 1
+  if num_sub_datasets == 0:
+    total_nll = 0.
+  else:
+    total_nll /= num_sub_datasets
 
   # We should really be including priors on the hyperparameters here.
   if 'priors' in params.config:
@@ -161,7 +174,8 @@ def neg_log_marginal_likelihood(mean_func,
         total_nll -= log_prior_prob
       else:
         logging.warning('No prior provided for param %s', k)
-
+  if return_key2nll:
+    return total_nll, key2nll
   return total_nll
 
 

@@ -21,6 +21,7 @@ from hyperbo.basics import definitions as defs
 from hyperbo.basics import linalg
 import jax
 import jax.numpy as jnp
+import jax.scipy.linalg as jspla
 
 # import jax._src.dtypes as dtypes
 
@@ -85,13 +86,28 @@ DEFAULT_WARP_FUNC = {
 }
 
 
+def svd_matrix_sqrt(cov):
+  """Compute the square root of a symmetric matrix via SVD.
+
+  Args:
+    cov: a symmetric matrix.
+
+  Returns:
+    The decomposed factor A such that A * A.T = cov and A is full column rank.
+  """
+  (u, s, _) = jspla.svd(cov)
+  factor = u * jnp.sqrt(s[..., None, :])
+  tol = s.max() * jnp.finfo(s.dtype).eps / 2. * jnp.sqrt(2*cov.shape[0] + 1.)
+  rank = jnp.count_nonzero(s > tol)
+  return factor[:, :rank]
+
+
 def kl_multivariate_normal(mu0,
                            cov0,
                            mu1,
                            cov1,
                            weight=1.,
                            partial=True,
-                           feat0=None,
                            eps=0.):
   """Computes KL divergence between two multivariate normal distributions.
 
@@ -103,9 +119,6 @@ def kl_multivariate_normal(mu0,
       cov1 must be invertible.
     weight: weight for the returned KL divergence.
     partial: only compute terms in KL involving mu1 and cov1 if True.
-    feat0: (optional) feature used to compute cov0 if cov0 = feat0 * feat0.T /
-      feat0.shape[1]. For a low-rank cov0, we may have to compute the KL
-      divergence for a degenerate multivariate normal.
     eps: (optional) small positive value added to the diagonal terms of cov0 and
       cov1 to make them well behaved.
 
@@ -129,29 +142,22 @@ def kl_multivariate_normal(mu0,
       cov1, x, cached_cholesky=chol1)
   trcov1invcov0 = jnp.trace(vmap(func)(cov0))
   mahalanobis = jnp.dot(mu_diff, cov1invmudiff)
-  logdetcov1 = jnp.sum(2 * jnp.log(jnp.diag(chol1)))
-  common_terms = trcov1invcov0 + mahalanobis + logdetcov1
+  common_terms = trcov1invcov0 + mahalanobis
   if partial:
-    return 0.5 * weight * common_terms
-  else:
-    if feat0 is not None and feat0.shape[0] > feat0.shape[1]:
-      logging.info('Using pseudo determinant of cov0.')
-      sign, logdetcov0 = jnp.linalg.slogdet(
-          jnp.divide(jnp.dot(feat0.T, feat0), feat0.shape[1]))
-      logging.info(msg=f'Pseudo logdetcov0 = {logdetcov0}')
-      assert sign == 1., 'Pseudo determinant of cov0 is 0 or negative.'
-
-      # cov0inv is computed for more accurate pseudo KL. feat0 may be low rank.
-      cov0inv = jnp.linalg.pinv(cov0)
-      return 0.5 * weight * (
-          common_terms - logdetcov0 -
-          jnp.linalg.matrix_rank(jnp.dot(cov0inv, cov0)) + jnp.log(2 * jnp.pi) *
-          (cov1.shape[0] - feat0.shape[1]))
-    else:
-      sign, logdetcov0 = jnp.linalg.slogdet(cov0)
-      logging.info(msg=f'sign = {sign}; logdetcov0 = {logdetcov0}')
-      assert sign == 1., 'Determinant of cov0 is 0 or negative.'
-      return 0.5 * weight * (common_terms - logdetcov0 - cov0.shape[0])
+    logdetcov1 = jnp.sum(2 * jnp.log(jnp.diag(chol1)))
+    # Approximate the det term of EKL with log det of cov1.
+    ekl = common_terms + logdetcov1
+    return weight * ekl
+  # Compute the full EKL
+  chol0 = svd_matrix_sqrt(cov0)
+  sign, logdetcov0 = jnp.linalg.slogdet(jnp.dot(chol0.T, chol0))
+  logging.info(msg=f'sign, logdetcov0 = {sign}, {logdetcov0}')
+  assert sign == 1., 'Pseudo determinant of cov0 is 0 or negative.'
+  sign, logdetcov1 = jnp.linalg.slogdet(jnp.dot(chol0.T, jnp.dot(cov1, chol0)))
+  logging.info(msg=f'sign, logdetcov1 = {sign}, {logdetcov1}')
+  assert sign == 1., 'Determinant of cov1 is 0 or negative.'
+  ekl = 0.5 * (common_terms + logdetcov1- 2*logdetcov0 - chol0.shape[1])
+  return weight * ekl
 
 
 def euclidean_multivariate_normal(mu0,

@@ -15,6 +15,7 @@
 
 """Inferrence and other util functions for a (multi-task) GP."""
 
+import collections
 import functools
 import logging
 from typing import Any, Callable, Dict, List, Tuple, Union
@@ -472,41 +473,43 @@ class GP:
     logging.info(msg=f'params = {self.params}')
     return self.params
 
-  def neg_log_marginal_likelihood(self) -> float:
-    """Compute negative log marginal likelihood for current model."""
+  def neg_log_marginal_likelihood(
+      self) -> Tuple[float, Dict[Union[int, str], float]]:
+    """Return total nll and dict mapping from sub-dataset key to nll."""
     return obj.neg_log_marginal_likelihood(
         mean_func=self.mean_func,
         cov_func=self.cov_func,
         params=self.params,
         dataset=self.dataset,
-        warp_func=self.warp_func)
+        warp_func=self.warp_func,
+        return_key2nll=True)
 
-  def sample_mean_cov_regularizer(self,
-                                  distance=utils.kl_multivariate_normal
-                                 ) -> float:
-    """Compute regularizer on sample mean and sample covariance."""
+  def empirical_divergence(self,
+                           distance=utils.kl_multivariate_normal) -> float:
+    """Compute empirical divergence from sample mean and sample covariance."""
     return obj.multivariate_normal_divergence(
         mean_func=self.mean_func,
         cov_func=self.cov_func,
         params=self.params,
         dataset=self.dataset,
         warp_func=self.warp_func,
-        distance=distance,
-        use_feat0=True)
+        distance=distance)
 
-  def stats(self, verbose=True) -> Tuple[float, float, float]:
+  def stats(
+      self,
+      verbose=True) -> Tuple[float, float, float, Dict[Union[int, str], float]]:
     """Compute objective stats for current model."""
-    nll = self.neg_log_marginal_likelihood()
-    klreg = self.sample_mean_cov_regularizer(
+    nll, key2nll = self.neg_log_marginal_likelihood()
+    ekl = self.empirical_divergence(
         distance=functools.partial(
             utils.kl_multivariate_normal, partial=False, eps=1e-6))
-    eucreg = self.sample_mean_cov_regularizer(
+    euc = self.empirical_divergence(
         distance=utils.euclidean_multivariate_normal)
-    msg = f'nll = {nll}, kl reg = {klreg}, euc reg = {eucreg}'
+    msg = f'nll = {nll}, ekl = {ekl}, euc reg = {euc}'
     if verbose:
       print(msg)
     logging.info(msg=msg)
-    return nll, klreg, eucreg
+    return nll, ekl, euc, key2nll
 
   def update_model_params(self, model_params: Dict[str, Any]):
     """Update params.model (must clean up params.cache)."""
@@ -604,21 +607,30 @@ class HGP(GP):
     else:
       return [self.params.model]
 
-  def stats(self, verbose: bool = True) -> Tuple[float, float, float]:
+  def stats(
+      self,
+      verbose: bool = True
+  ) -> Tuple[float, float, float, Dict[Union[int, str], float]]:
     """Compute objective stats for current model."""
     samples = self.get_model_params_samples()
 
     all_stats = []
+    all_key2nll = collections.defaultdict(float)
     for model_params in samples:
       self.update_model_params(model_params)
-      all_stats.append(super().stats())
+      nll, ekl, euc, key2nll = super().stats()
+      all_stats.append((nll, ekl, euc))
+      for k in key2nll:
+        all_key2nll[k] += key2nll[k]
+    for k in key2nll:
+      all_key2nll[k] /= len(samples)
     all_stats = jnp.array(all_stats)
-    nll, klreg, eucreg = jnp.mean(all_stats, axis=0)
-    msg = f'HGP nll = {nll}, kl reg = {klreg}, euc reg = {eucreg}'
+    nll, ekl, euc = jnp.mean(all_stats, axis=0)
+    msg = f'HGP nll = {nll}, ekl = {ekl}, euc = {euc}'
     if verbose:
       print(msg)
     logging.info(msg=msg)
-    return nll, klreg, eucreg
+    return nll, ekl, euc, all_key2nll
 
   def predict(self,
               queried_inputs: jnp.ndarray,

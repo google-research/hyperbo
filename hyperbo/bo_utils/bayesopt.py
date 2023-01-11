@@ -45,7 +45,7 @@ def get_best_datapoint(sub_dataset):
 
 def retrain_model(model: gp.GP,
                   sub_dataset_key: Union[int, str],
-                  train_random_key: Optional[jax.random.PRNGKeyArray] = None,
+                  random_key: Optional[jax.random.PRNGKeyArray] = None,
                   get_params_path: Optional[Callable[[Any], Any]] = None,
                   callback: Optional[Callable[[Any], Any]] = None):
   """Retrain the model with more observations on sub_dataset.
@@ -53,7 +53,7 @@ def retrain_model(model: gp.GP,
   Args:
     model: gp.GP.
     sub_dataset_key: key of the sub_dataset for testing in dataset.
-    train_random_key: random state for jax.random, to be used for training.
+    random_key: random state for jax.random, to be used for training.
     get_params_path: optional function handle that returns params path.
     callback: optional callback function for loggin of training steps.
   """
@@ -69,7 +69,7 @@ def retrain_model(model: gp.GP,
            f'{max_training_step}.'))
   model.params.config['max_training_step'] = max_training_step
   model.train(
-      train_random_key, get_params_path=get_params_path, callback=callback)
+      random_key, get_params_path=get_params_path, callback=callback)
 
 
 def bayesopt(key: Any, model: gp.GP, sub_dataset_key: Union[int, str],
@@ -96,10 +96,16 @@ def bayesopt(key: Any, model: gp.GP, sub_dataset_key: Union[int, str],
   for i in range(iters):
     start_time = time.time()
     retrain_model(model, sub_dataset_key=sub_dataset_key)
-    x_samples = input_sampler(key, input_dim)
-    evals = ac_func(
-        model=model, sub_dataset_key=sub_dataset_key, x_queries=x_samples)
-    select_idx = evals.argmax()
+    key, subkey = jax.random.split(key)
+    x_samples = input_sampler(subkey, input_dim)
+    if ac_func.__name__ == 'rand' or ac_func.__name__ == 'random_search':
+      logging.info('Using random search for bayesopt.')
+      key, subkey = jax.random.split(key)
+      select_idx = jax.random.choice(subkey, x_samples.shape[0])
+    else:
+      evals = ac_func(
+          model=model, sub_dataset_key=sub_dataset_key, x_queries=x_samples)
+      select_idx = evals.argmax()
     x_init = x_samples[select_idx]
 
     def f(x):
@@ -129,7 +135,7 @@ def simulated_bayesopt(
     queried_sub_dataset: SubDataset,
     ac_func: Callable[..., jnp.array],
     iters: int,
-    train_random_key: Optional[jax.random.PRNGKeyArray] = None,
+    random_key: Optional[jax.random.PRNGKeyArray] = None,
     get_params_path: Optional[Callable[[Any], Any]] = None,
     callback: Optional[Callable[[Any], Any]] = None) -> SubDataset:
   """Running simulated bayesopt on a set of pre-evaluated inputs x_queries.
@@ -140,7 +146,8 @@ def simulated_bayesopt(
     queried_sub_dataset: sub_dataset that can be queried.
     ac_func: acquisition function handle (see acfun.py).
     iters: number of iterations in BayesOpt sequential queries.
-    train_random_key: random state for jax.random, to be used for training.
+    random_key: random state for jax.random, to be used for training or random
+      search.
     get_params_path: optional function handle that returns params path.
     callback: optional callback function for loggin of training steps.
 
@@ -149,21 +156,28 @@ def simulated_bayesopt(
     tuple. These observations include those made before bayesopt.
   """
   for _ in range(iters):
-    if train_random_key is not None:
-      train_random_key, subkey = jax.random.split(train_random_key)
+    if random_key is not None:
+      random_key, subkey = jax.random.split(random_key)
     else:
       subkey = None
     retrain_model(
         model,
         sub_dataset_key=sub_dataset_key,
-        train_random_key=subkey,
+        random_key=subkey,
         get_params_path=get_params_path,
         callback=callback)
-    evals = ac_func(
-        model=model,
-        sub_dataset_key=sub_dataset_key,
-        x_queries=queried_sub_dataset.x)
-    select_idx = evals.argmax()
+    if ac_func.__name__ == 'rand' or ac_func.__name__ == 'random_search':
+      logging.info('Using random search for bayesopt.')
+      if random_key is None:
+        raise ValueError('Must specify a random key for random search.')
+      random_key, subkey = jax.random.split(random_key)
+      select_idx = jax.random.choice(subkey, queried_sub_dataset.x.shape[0])
+    else:
+      evals = ac_func(
+          model=model,
+          sub_dataset_key=sub_dataset_key,
+          x_queries=queried_sub_dataset.x)
+      select_idx = evals.argmax()
     eval_datapoint = queried_sub_dataset.x[select_idx], queried_sub_dataset.y[
         select_idx]
     model.update_sub_dataset(
@@ -210,7 +224,7 @@ def run_bayesopt(
     warp_func: optional dictionary that specifies the warping function for each
       parameter.
     init_random_key: random state for jax.random, to be used to initialize
-      required parts of GPParams.
+      required parts of GPParams or re-training or random search.
     method: BO method.
     init_model: to initialize model if True; otherwise False.
     data_loader_name: data loader name, e.g. pd1, hpob.
@@ -258,7 +272,7 @@ def run_bayesopt(
         queried_sub_dataset=queried_sub_dataset,
         ac_func=ac_func,
         iters=iters,
-        train_random_key=key,
+        random_key=key,
         get_params_path=get_params_path if save_retrain_model else None,
         callback=callback if save_retrain_model else None)
     return (sub_dataset.x,

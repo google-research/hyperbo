@@ -129,14 +129,14 @@ class GPTest(parameterized.TestCase):
         warp_func=warp_func)
     model.initialize_params(init_key)
 
-    init_nll, _, _ = model.stats()
+    init_nll, _, _, _ = model.stats()
 
     start_time = time.time()
     logging.info(msg=f'init_params={init_params}')
     inferred_params = model.train()
     logging.info(msg=f'Elapsed training time = {time.time() - start_time}')
 
-    inferred_nll, _, _ = model.stats()
+    inferred_nll, _, _, _ = model.stats()
 
     keys = params.model.keys()
     retrieved_inferred_params = dict(

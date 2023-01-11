@@ -47,7 +47,7 @@ class UtilsTest(absltest.TestCase):
     cov1 = np.random.uniform(-5, 5, (100, 1000))
     cov1 = np.dot(cov1, cov1.T)
     kl_01 = utils.kl_multivariate_normal(
-        mu0, cov0, mu1, cov1, partial=False, feat0=feat0)
+        mu0, cov0, mu1, cov1, partial=False)
     logging.info(msg=f'kl_01 = {kl_01}')
     self.assertGreater(kl_01, 0)
     self.assertLess(kl_01, np.inf)

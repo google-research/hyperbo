@@ -26,11 +26,12 @@ import numpy as np
 partial = functools.partial
 
 
-def random_search(x_queries, **unused_kwargs):
+def random_search(model, x_queries, **unused_kwargs):
   """Returns a uniformly sampled random array."""
-  seed = np.random.randint(np.iinfo(np.int32).max)
-  key = jrd.PRNGKey(seed)
-  return jrd.uniform(key, (x_queries.shape[0], 1))
+  assert model.rng is not None, 'Random search requires random key.'
+  key, subkey = jrd.split(model.rng)
+  model.rng = key
+  return jrd.uniform(subkey, (x_queries.shape[0], 1))
 
 
 def acfun_wrapper(acfun_sub: Callable[[jnp.array, jnp.array, Any], jnp.array],
@@ -48,6 +49,7 @@ def acfun_wrapper(acfun_sub: Callable[[jnp.array, jnp.array, Any], jnp.array],
   """
 
   def acquisition_function(
+      *,
       model: gp.GP,
       sub_dataset_key: Union[int, str],
       x_queries: jnp.array,
