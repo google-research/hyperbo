@@ -17,8 +17,6 @@
 
 import logging
 
-from hyperbo.basics import params_utils
-
 import jax
 from jax.custom_derivatives import custom_vjp
 import jax.numpy as jnp
@@ -35,13 +33,57 @@ def solve_linear_system(coeff, b):
   return chol, kinvy
 
 
-def solve_gp_linear_system(mean_func,
-                           cov_func,
-                           params,
-                           x,
-                           y,
-                           warp_func=None,
-                           eps=1e-6):
+def compute_delta_y_and_cov(
+    mean_func,
+    cov_func,
+    noise_variance_func,
+    params,
+    x,
+    y,
+    warp_func=None,
+    eps=1e-6,
+):
+  """Compute y-mu(x) and cov(x,x)+I*sigma^2.
+
+  Args:
+    mean_func: mean function handle that maps from (params, n x d input,
+      warp_func) to an n dimensional mean vector. (see vector_map in mean.py for
+      more details).
+    cov_func: covariance function handle that maps from (params, n1 x d input1,
+      n2 x d input2, wrap_func) to a n1 x n2  covariance matrix (see matrix_map
+      in kernel.py for more details).
+    noise_variance_func: noise variance function handle that maps from (params,
+      n x d input, warp_func) to an n dimensional noise variance func vector.
+      (see vector_map in noise_variance_func.py for more details).
+    params: parameters for the GP.
+    x: n x d dimensional input array for n data points.
+    y: n x 1 dimensional evaluation array for n data points.
+    warp_func: optional dictionary that specifies the warping function for each
+      parameter.
+    eps: extra value added to the diagonal of the covariance matrix for
+      numerical stability.
+
+  Returns:
+    y-mu(x) and cov(x,x)+I*sigma^2.
+  """
+  y = y - jnp.atleast_2d(mean_func(params, x, warp_func=warp_func))
+  noise_variance = noise_variance_func(params, x, warp_func=warp_func)
+  cov = cov_func(params, x, warp_func=warp_func) + jnp.diag(
+      noise_variance.flatten() + eps
+  )
+  return y, cov
+
+
+def solve_gp_linear_system(
+    mean_func,
+    cov_func,
+    noise_variance_func,
+    params,
+    x,
+    y,
+    warp_func=None,
+    eps=1e-6,
+):
   """Solve a linear system specified by a GP.
 
   This function solves m + Kv = y using the Cholesky decomposition of K, where
@@ -55,6 +97,9 @@ def solve_gp_linear_system(mean_func,
     cov_func: covariance function handle that maps from (params, n1 x d input1,
       n2 x d input2, wrap_func) to a n1 x n2  covariance matrix (see matrix_map
       in kernel.py for more details).
+    noise_variance_func: noise variance function handle that maps from (params,
+      n x d input, warp_func) to an n dimensional noise variance func vector.
+      (see vector_map in noise_variance_func.py for more details).
     params: parameters for the GP.
     x: n x d dimensional input array for n data points.
     y: n x 1 dimensional evaluation array for n data points.
@@ -69,12 +114,9 @@ def solve_gp_linear_system(mean_func,
     already subtracted mean.
     y: y value with mean subtracted.
   """
-  y = y - jnp.atleast_2d(mean_func(params, x, warp_func=warp_func))
-  noise_variance, = params_utils.retrieve_params(
-      params, ['noise_variance'], warp_func=warp_func)
-  cov = cov_func(
-      params, x, warp_func=warp_func) + jnp.eye(len(x)) * (
-          noise_variance + eps)
+  y, cov = compute_delta_y_and_cov(
+      mean_func, cov_func, noise_variance_func, params, x, y, warp_func, eps
+  )
   chol, kinvy = solve_linear_system(cov, y)
   return chol, kinvy, y
 

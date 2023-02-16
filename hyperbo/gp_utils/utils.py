@@ -97,18 +97,16 @@ def svd_matrix_sqrt(cov):
   """
   (u, s, _) = jspla.svd(cov)
   factor = u * jnp.sqrt(s[..., None, :])
-  tol = s.max() * jnp.finfo(s.dtype).eps / 2. * jnp.sqrt(2*cov.shape[0] + 1.)
+  tol = (
+      s.max() * jnp.finfo(s.dtype).eps / 2.0 * jnp.sqrt(2 * cov.shape[0] + 1.0)
+  )
   rank = jnp.count_nonzero(s > tol)
   return factor[:, :rank]
 
 
-def kl_multivariate_normal(mu0,
-                           cov0,
-                           mu1,
-                           cov1,
-                           weight=1.,
-                           partial=True,
-                           eps=0.):
+def kl_multivariate_normal(
+    mu0, cov0, mu1, cov1, weight=1.0, partial=True, eps=0.0
+):
   """Computes KL divergence between two multivariate normal distributions.
 
   Args:
@@ -139,24 +137,34 @@ def kl_multivariate_normal(mu0,
   chol1, cov1invmudiff = linalg.solve_linear_system(cov1, mu_diff)
   # pylint: disable=g-long-lambda
   func = lambda x: linalg.inverse_spdmatrix_vector_product(
-      cov1, x, cached_cholesky=chol1)
+      cov1, x, cached_cholesky=chol1
+  )
   trcov1invcov0 = jnp.trace(vmap(func)(cov0))
   mahalanobis = jnp.dot(mu_diff, cov1invmudiff)
   common_terms = trcov1invcov0 + mahalanobis
   if partial:
-    logdetcov1 = jnp.sum(2 * jnp.log(jnp.diag(chol1)))
-    # Approximate the det term of EKL with log det of cov1.
+    cov0_sqrt = svd_matrix_sqrt(cov0)
+    if cov0_sqrt.shape[1] < cov0_sqrt.shape[1]:
+      sign, logdetcov1 = jnp.linalg.slogdet(
+          jnp.dot(cov0_sqrt.T, jnp.dot(cov1, cov0_sqrt))
+      )
+      logging.info(msg=f'sign, logdetcov1 = {sign}, {logdetcov1}')
+      assert sign == 1.0, 'Determinant of cov1 is 0 or negative.'
+    else:
+      logdetcov1 = jnp.sum(2 * jnp.log(jnp.diag(chol1)))
     ekl = common_terms + logdetcov1
     return weight * ekl
   # Compute the full EKL
-  chol0 = svd_matrix_sqrt(cov0)
-  sign, logdetcov0 = jnp.linalg.slogdet(jnp.dot(chol0.T, chol0))
+  cov0_sqrt = svd_matrix_sqrt(cov0)
+  sign, logdetcov0 = jnp.linalg.slogdet(jnp.dot(cov0_sqrt.T, cov0_sqrt))
   logging.info(msg=f'sign, logdetcov0 = {sign}, {logdetcov0}')
   assert sign == 1., 'Pseudo determinant of cov0 is 0 or negative.'
-  sign, logdetcov1 = jnp.linalg.slogdet(jnp.dot(chol0.T, jnp.dot(cov1, chol0)))
+  sign, logdetcov1 = jnp.linalg.slogdet(
+      jnp.dot(cov0_sqrt.T, jnp.dot(cov1, cov0_sqrt))
+  )
   logging.info(msg=f'sign, logdetcov1 = {sign}, {logdetcov1}')
   assert sign == 1., 'Determinant of cov1 is 0 or negative.'
-  ekl = 0.5 * (common_terms + logdetcov1- 2*logdetcov0 - chol0.shape[1])
+  ekl = 0.5 * (common_terms + logdetcov1 - 2 * logdetcov0 - cov0_sqrt.shape[1])
   return weight * ekl
 
 

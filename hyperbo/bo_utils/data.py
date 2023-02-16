@@ -255,13 +255,14 @@ def process_dataframe(
     trials,
     study_identifier,
     labels,
-    p_observed=0.,
+    p_observed=0.0,
     maximize_metric=True,
     warp_func=None,
     verbose=True,
     sub_dataset_key=None,
     num_remove=0,
-    p_remove=0.,
+    p_remove=0.0,
+    fillna_val=None,
 ):
   """Process a dataframe and return needed info for an experiment.
 
@@ -279,6 +280,8 @@ def process_dataframe(
     sub_dataset_key: sub_dataset name to be queried.
     num_remove: number of sub-datasets to remove.
     p_remove: proportion of data to be removed.
+    fillna_val: value to fill nan in labels of trials. Drop all nan if
+      fillna_val is None.
 
   Returns:
     dataset: Dict[str, SubDataset], mapping from study group to a SubDataset.
@@ -287,7 +290,10 @@ def process_dataframe(
   """
   trials = trials[[study_identifier] + labels +
                   ['aligned', 'aligned_suffix']].copy(deep=True)
-  trials = trials.dropna()
+  if fillna_val is not None:
+    trials = trials.fillna(fillna_val)
+  else:
+    trials = trials.dropna()
 
   if verbose:
     print('trials: ', trials.shape)
@@ -353,16 +359,19 @@ def process_dataframe(
   return dataset, sub_dataset_key, queried_sub_dataset
 
 
-def pd1(key,
-        p_observed,
-        verbose=True,
-        sub_dataset_key=None,
-        input_warp=True,
-        output_log_warp=True,
-        num_remove=0,
-        metric_name='best_valid/error_rate',
-        p_remove=0.,
-        data_files=None):
+def pd1(
+    key,
+    p_observed,
+    verbose=True,
+    sub_dataset_key=None,
+    input_warp=True,
+    output_log_warp=True,
+    num_remove=0,
+    metric_name='best_valid/error_rate',
+    p_remove=0.0,
+    data_files=None,
+    fillna_val=None,
+):
   """Load PD1(Nesterov) from init2winit and pick a random study as test function.
 
   For matched dataframes, we set `aligned` to True in its trials and reflect it
@@ -382,6 +391,8 @@ def pd1(key,
     p_remove: proportion of data to be removed.
     data_files: a dict mapping data descriptions to files. See PD1 for an
       example.
+    fillna_val: value to fill nan in labels of trials. Drop all nan if
+      fillna_val is None.
 
   Returns:
     dataset: Dict[str, SubDataset], mapping from study group to a SubDataset.
@@ -431,7 +442,9 @@ def pd1(key,
       verbose=verbose,
       sub_dataset_key=sub_dataset_key,
       num_remove=num_remove,
-      p_remove=p_remove)
+      p_remove=p_remove,
+      fillna_val=fillna_val,
+  )
 
 
 def _deduplicate(x, y, dataset_name, verbose=True):
@@ -563,21 +576,27 @@ def get_output_warper(output_log_warp=True, return_warping=False):
   return output_warper
 
 
-def hpob_dataset(search_space_index,
-                 test_dataset_id_index,
+def normalize(y, eps=1e-12):
+  """Normalize a vector."""
+  return (y - np.min(y)) / (np.max(y) - np.min(y) + eps)
+
+
+def hpob_dataset(search_space,
+                 test_dataset_id,
                  test_seed,
                  output_log_warp=True,
                  test_only=False,
                  n_remain=-1,
-                 remain_random_key=None):
+                 remain_random_key=None,
+                 normalize_y=False):
   """Load the original finite hpob dataset by search space and test dataset id.
 
   To use the HPO-B dataset, download data and import hpob_handler from
     https://github.com/releaunifreiburg/HPO-B.
 
   Args:
-    search_space_index: int index or string of a search space.
-    test_dataset_id_index: int index or string of test dataset.
+    search_space: string of the search space.
+    test_dataset_id: string of the test dataset.
     test_seed: Identifier of the seed for the evaluation. Options: test0, test1,
       test2, test3, test4.
     output_log_warp: log warp on output with max assumed to be 1.
@@ -585,6 +604,7 @@ def hpob_dataset(search_space_index,
     n_remain: number of trainnig datapoints per training task.
       Keep all datapoints if n_remain <= 0.
     remain_random_key: Jax PRNGKey.
+    normalize_y: normalize all y values for each subdataset if True.
 
   Returns:
     dataset: Dict[str, SubDataset], mapping from study group to a SubDataset.
@@ -601,24 +621,6 @@ def hpob_dataset(search_space_index,
     handler = hpob_handler.HPOBHandler(root_dir=HPOB_ROOT_DIR, mode='v3-test')
   else:
     handler = hpob_handler.HPOBHandler(root_dir=HPOB_ROOT_DIR, mode='v3')
-  if isinstance(search_space_index, str):
-    search_space = search_space_index
-  elif isinstance(search_space_index, int):
-    if test_only:
-      raise ValueError('Cannot use int search_space_index if test_only.')
-    spaces = list(handler.meta_train_data.keys())
-    spaces.sort()
-    search_space = spaces[search_space_index]
-  else:
-    raise ValueError('search_space_index must be str or int.')
-  if isinstance(test_dataset_id_index, str):
-    test_dataset_id = test_dataset_id_index
-  elif isinstance(test_dataset_id_index, int):
-    test_dataset_ids = list(handler.meta_test_data[search_space].keys())
-    test_dataset_ids.sort()
-    test_dataset_id = test_dataset_ids[test_dataset_id_index]
-  else:
-    raise ValueError('test_dataset_id_index must be str or int.')
   dataset = {}
   output_warper = get_output_warper(output_log_warp)
   if not test_only:
@@ -627,14 +629,16 @@ def hpob_dataset(search_space_index,
           handler.meta_train_data[search_space][dataset_id]['X'])
       train_y = jnp.array(
           handler.meta_train_data[search_space][dataset_id]['y'])
-      if n_remain > 0 and train_x.shape[0] > n_remain:
+      if normalize_y:
+        train_y = normalize(train_y)
+      if n_remain >= 0 and train_x.shape[0] > n_remain:
         remain_random_key, subkey = jax.random.split(remain_random_key)
         indices = jax.random.permutation(subkey, train_x.shape[0])
         indices = indices[:n_remain]
         train_x = train_x[indices]
         train_y = train_y[indices]
-      train_x = output_warper(train_x)
-      train_y = output_warper(train_y)
+      if output_log_warp:
+        train_y = output_warper(train_y)
       dataset[dataset_id] = SubDataset(x=train_x, y=train_y)
   if test_seed in ['test0', 'test1', 'test2', 'test3', 'test4']:
     init_index = handler.bo_initializations[search_space][test_dataset_id][
@@ -643,6 +647,8 @@ def hpob_dataset(search_space_index,
         handler.meta_test_data[search_space][test_dataset_id]['X'])
     test_y = np.array(
         handler.meta_test_data[search_space][test_dataset_id]['y'])
+    if normalize_y:
+      test_y = normalize(test_y)
     if output_log_warp:
       # if output_log_warp is True, warp the clipped init y without surrogate.
       test_y = output_warper(test_y)
@@ -656,16 +662,19 @@ def hpob_dataset(search_space_index,
 
 
 
-def random(key,
-           mean_func,
-           cov_func,
-           params,
-           dim,
-           n_observed,
-           n_queries,
-           n_func_historical=0,
-           m_points_historical=0,
-           warp_func=None):
+def random(
+    key,
+    mean_func,
+    cov_func,
+    noise_variance_func,
+    params,
+    dim,
+    n_observed,
+    n_queries,
+    n_func_historical=0,
+    m_points_historical=0,
+    warp_func=None,
+):
   """Generate random historical data and observed data for current function.
 
   Args:
@@ -676,6 +685,9 @@ def random(key,
     cov_func: covariance function handle that maps from (params, n1 x d input1,
       n2 x d input2, wrap_func) to a n1 x n2 covariance matrix (see matrix_map
       in kernel.py for more details).
+    noise_variance_func: noise variance function handle that maps from (params,
+      n x d input, warp_func) to an n dimensional noise variance func vector.
+      (see vector_map in noise_variance_func.py for more details).
     params: parameters for covariance, mean, and noise variance.
     dim: input dimension d.
     n_observed: number of observed data points for the queried function.
@@ -700,13 +712,27 @@ def random(key,
     x_hist_key, y_hist_key = jax.random.split(hist_keys[i], 2)
     vx = jax.random.uniform(x_hist_key, (m_points_historical, dim))
     vy = gp.sample_from_gp(
-        y_hist_key, mean_func, cov_func, params, vx, warp_func=warp_func)
+        y_hist_key,
+        mean_func,
+        cov_func,
+        noise_variance_func,
+        params,
+        vx,
+        warp_func=warp_func,
+    )
     dataset[i] = SubDataset(x=vx, y=vy)
 
   # Generate observed data and possible queries for queried function.
   vx = jax.random.uniform(x_key, (n_observed + n_queries, dim))
   vy = gp.sample_from_gp(
-      y_key, mean_func, cov_func, params, vx, warp_func=warp_func)
+      y_key,
+      mean_func,
+      cov_func,
+      noise_variance_func,
+      params,
+      vx,
+      warp_func=warp_func,
+  )
   x_queries, x_observed = vx[:n_queries], vx[n_queries:]
   y_queries, y_observed = vy[:n_queries], vy[n_queries:]
   dataset[n_func_historical] = SubDataset(x=x_observed, y=y_observed)

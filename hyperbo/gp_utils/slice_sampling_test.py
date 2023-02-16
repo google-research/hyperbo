@@ -31,6 +31,7 @@ from hyperbo.gp_utils import basis_functions as bf
 from hyperbo.gp_utils import gp
 from hyperbo.gp_utils import kernel
 from hyperbo.gp_utils import mean
+from hyperbo.gp_utils import noise_variance
 from hyperbo.gp_utils import priors
 from hyperbo.gp_utils import utils
 import jax
@@ -63,11 +64,12 @@ class GPTest(parameterized.TestCase):
     qx = jax.random.normal(key, (nq, 2))
     params = GPParams(
         model={
-            'constant': 5.,
-            'lengthscale': .1,
+            'constant': 5.0,
+            'lengthscale': 0.1,
             'signal_variance': 1.0,
-            'noise_variance': 0.01,
-        })
+            'constant_noise_variance': 0.01,
+        }
+    )
     if cov_func in [
         kernel.squared_exponential_mlp, kernel.matern32_mlp, kernel.matern52_mlp
     ]:
@@ -83,11 +85,18 @@ class GPTest(parameterized.TestCase):
       bf.init_mlp_with_shape(key, params, vx.shape)
 
     mean_func = mean.constant
+    noise_variance_func = noise_variance.constant
     logging.info(msg=f'params = {params}')
 
     def sample_from_gp(seed):
       return gp.sample_from_gp(
-          jax.random.PRNGKey(seed), mean_func, cov_func, params, vx)
+          jax.random.PRNGKey(seed),
+          mean_func,
+          cov_func,
+          noise_variance_func,
+          params,
+          vx,
+      )
 
     dataset = [(vx, sample_from_gp(i)) for i in range(10)]
 
@@ -96,9 +105,9 @@ class GPTest(parameterized.TestCase):
     init_params = GPParams(
         model={
             'constant': 5.1,
-            'lengthscale': jnp.array([0., 0.]),
-            'signal_variance': 0.,
-            'noise_variance': -4.
+            'lengthscale': jnp.array([0.0, 0.0]),
+            'signal_variance': 0.0,
+            'constant_noise_variance': -4.0,
         },
         config={
             'method': 'slice_sample',
@@ -109,7 +118,8 @@ class GPTest(parameterized.TestCase):
             'priors': priors.DEFAULT_PRIORS,
             'mlp_features': (8,),
             'batch_size': 100,
-        })
+        },
+    )
     init_key, _ = jax.random.split(init_key)
     # bf.init_kumar_warp_with_shape(init_key, init_params, vx.shape)
     if cov_func in [
@@ -125,8 +135,10 @@ class GPTest(parameterized.TestCase):
         dataset=dataset,
         mean_func=mean.linear_mlp,
         cov_func=cov_func,
+        noise_variance_func=noise_variance_func,
         params=init_params,
-        warp_func=warp_func)
+        warp_func=warp_func,
+    )
     model.initialize_params(init_key)
 
     init_nll, _, _, _ = model.stats()

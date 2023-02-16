@@ -171,7 +171,13 @@ def encode_model_filename(config: ml_collections.ConfigDict):
     if not isinstance(additional_info, str):
       additional_info = str(additional_info)
     if config.method == 'stbo':
-      model_spec = '-'.join((model_key, config.ac_func_name, config.method))
+      model_spec = '-'.join((
+          model_key,
+          config.ac_func_name,
+          config.method,
+          config.test_dataset_index,
+          config.test_seed,
+      ))
     else:
       model_spec = model_key
     if config.data_loader_name == 'pd1':

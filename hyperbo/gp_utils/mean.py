@@ -41,7 +41,8 @@ def mean_vector(mean_func):
         each parameter.
 
     Returns:
-      The n dimensional mean vector derived from mean function evaluations
+      The n dimensional mean (column) vector derived from mean function
+      evaluations
         on every input from vx.
     """
     # pylint: disable=unnecessary-lambda

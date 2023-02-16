@@ -251,9 +251,9 @@ def plot_summary(labels,
     parts = axes[i + 1].violinplot(data, showmedians=False, showextrema=False)
     inds = np.arange(1, len(medians) + 1)
     axes[i + 1].scatter(
-        inds, medians, marker='o', color='white', s=30, zorder=3)
+        inds, medians, marker='o', color='white', s=10, zorder=3)
     axes[i + 1].vlines(
-        inds, quantile1, quantile3, color='k', linestyle='-', lw=5)
+        inds, quantile1, quantile3, color='k', linestyle='-', lw=1.5)
     for pc, la in zip(parts['bodies'], labels):
       pc.set_facecolor(colors[la])
       pc.set_edgecolor('black')

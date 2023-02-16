@@ -29,6 +29,7 @@ from hyperbo.bo_utils import const
 from hyperbo.gp_utils import gp
 from hyperbo.gp_utils import kernel
 from hyperbo.gp_utils import mean
+from hyperbo.gp_utils import noise_variance
 
 import jax
 import numpy as np
@@ -50,21 +51,28 @@ class AcFunTest(parameterized.TestCase):
     vx = jax.random.normal(x_key, (nx, dim))
     params = GPParams(
         model={
-            'constant': 5.,
-            'lengthscale': 1.,
+            'constant': 5.0,
+            'lengthscale': 1.0,
             'signal_variance': 1.0,
-            'noise_variance': 0.01,
-        })
+            'constant_noise_variance': 0.01,
+        }
+    )
     mean_func = mean.constant
     cov_func = kernel.squared_exponential
-    vy = gp.sample_from_gp(y_key, mean_func, cov_func, params, vx)
+    noise_variance_func = noise_variance.constant
+
+    vy = gp.sample_from_gp(
+        y_key, mean_func, cov_func, noise_variance_func, params, vx
+    )
     x_queries = jax.random.normal(q_key, (nq, dim))
 
     model = gp.GP(
         dataset=[(vx, vy)],
         mean_func=mean_func,
         cov_func=cov_func,
-        params=params)
+        noise_variance_func=noise_variance_func,
+        params=params,
+    )
     model.rng = jax.random.PRNGKey(0)
 
     ac_eval = ac_func(model=model, sub_dataset_key=0, x_queries=x_queries)
@@ -82,14 +90,18 @@ class AcFunTest(parameterized.TestCase):
 
     mean_func = mean.constant
     cov_func = kernel.squared_exponential
+    noise_variance_func = noise_variance.constant
     params = GPParams(
         model={
-            'constant': 5.,
+            'constant': 5.0,
             'lengthscale': 0.1,
             'signal_variance': 1.0,
-            'noise_variance': 0.01,
-        })
-    vy = gp.sample_from_gp(y_key, mean_func, cov_func, params, vx)
+            'constant_noise_variance': 0.01,
+        }
+    )
+    vy = gp.sample_from_gp(
+        y_key, mean_func, cov_func, noise_variance_func, params, vx
+    )
     x_queries = jax.random.normal(q_key, (nq, dim))
     constant_lengthscale = []
     for _ in range(100):
@@ -103,13 +115,16 @@ class AcFunTest(parameterized.TestCase):
               'constant': cl[0],
               'lengthscale': cl[1:],
               'signal_variance': 1.0,
-              'noise_variance': 0.01,
-          })
+              'constant_noise_variance': 0.01,
+          }
+      )
       model = gp.GP(
           dataset=[(vx, vy)],
           mean_func=mean_func,
           cov_func=cov_func,
-          params=params)
+          noise_variance_func=noise_variance_func,
+          params=params,
+      )
       model.rng = jax.random.PRNGKey(0)
       return ac_func(model=model, sub_dataset_key=0, x_queries=x_queries)
     constant_lengthscale = jax.numpy.array(constant_lengthscale)

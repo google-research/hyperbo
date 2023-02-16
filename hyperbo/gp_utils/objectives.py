@@ -21,12 +21,14 @@ from hyperbo.basics import linalg
 from hyperbo.basics import params_utils
 from hyperbo.gp_utils import utils
 import jax.numpy as jnp
+import jax.scipy.linalg as jspla
 
 retrieve_params = params_utils.retrieve_params
 
 
 def multivariate_normal_divergence(mean_func,
                                    cov_func,
+                                   noise_variance_func,
                                    params,
                                    dataset,
                                    warp_func=None,
@@ -45,6 +47,9 @@ def multivariate_normal_divergence(mean_func,
     cov_func: covariance function handle that maps from (params, n1 x d input1,
       n2 x d input2, wrap_func) to a n1 x n2  covariance matrix (see matrix_map
       in kernel.py for more details).
+    noise_variance_func: noise variance function handle that maps from (params,
+      n x d input, warp_func) to an n dimensional noise variance func vector.
+      (see vector_map in noise_variance_func.py for more details).
     params: parameters for covariance, mean, and noise variance.
     dataset: Dict[Union[int, str], SubDataset], a dictionary mapping from key to
       SubDataset. For aligned sub-dataset, this function should only be used if
@@ -58,7 +63,6 @@ def multivariate_normal_divergence(mean_func,
     The divergence value between two multivariate normal distributions, one is
     defined by the data and the other is defined by the GP model.
   """
-
   def compute_metric_per_sub_dataset(sub_dataset):
     """Compute the regularizer on a subset of dataset keys."""
     if sub_dataset.y.shape[0] == 0:
@@ -66,30 +70,26 @@ def multivariate_normal_divergence(mean_func,
     mu_data = jnp.mean(sub_dataset.y, axis=1)
     cov_data = jnp.cov(sub_dataset.y, bias=True)
     mu_model = mean_func(params, sub_dataset.x, warp_func=warp_func).flatten()
-    noise_variance, = retrieve_params(
-        params, ['noise_variance'], warp_func=warp_func)
+    noise_variance = noise_variance_func(params, sub_dataset.x, warp_func)
+
     cov_model = cov_func(
         params, sub_dataset.x,
-        warp_func=warp_func) + jnp.eye(sub_dataset.x.shape[0]) * noise_variance
+        warp_func=warp_func) + jnp.diag(noise_variance.flatten())
 
     return distance(
         mu0=mu_data,
         cov0=cov_data,
         mu1=mu_model,
-        cov1=cov_model)
+        cov1=cov_model,
+    )
 
   total_val = 0.
   num_sub_datasets = 0
-  for sub_dataset_key, sub_dataset in dataset.items():
+  for sub_dataset in dataset.values():
     if sub_dataset.aligned is None:
       continue
     if sub_dataset.x.shape[0] == 0:
       continue
-    if sub_dataset.y.shape[
-        1] == 0 or sub_dataset.y.shape[0] != sub_dataset.x.shape[0]:
-      raise ValueError(
-          (f'dataset[{sub_dataset_key}].x has shape {sub_dataset.x.shape} '
-           f'but dataset[{sub_dataset_key}].y has shape {sub_dataset.y.shape}'))
     total_val += compute_metric_per_sub_dataset(sub_dataset)
     num_sub_datasets += 1
 
@@ -103,13 +103,18 @@ multivariate_normal_euc_distance = functools.partial(
     distance=utils.euclidean_multivariate_normal)
 
 
-def neg_log_marginal_likelihood(mean_func,
-                                cov_func,
-                                params,
-                                dataset,
-                                warp_func=None,
-                                exclude_aligned=True,
-                                return_key2nll=False):
+def neg_log_marginal_likelihood(
+    mean_func,
+    cov_func,
+    noise_variance_func,
+    params,
+    dataset,
+    warp_func=None,
+    exclude_aligned=True,
+    return_key2nll=False,
+    use_cholesky=True,
+    **unused_kwargs,
+):
   """Compute the negative of marginal likelihood of a (multi-task) GP.
 
   Args:
@@ -119,6 +124,9 @@ def neg_log_marginal_likelihood(mean_func,
     cov_func: covariance function handle that maps from (params, n1 x d input1,
       n2 x d input2, wrap_func) to a n1 x n2  covariance matrix (see matrix_map
       in kernel.py for more details).
+    noise_variance_func: noise variance function handle that maps from (params,
+      n x d input, warp_func) to an n dimensional noise variance func vector.
+      (see vector_map in noise_variance_func.py for more details).
     params: parameters for covariance, mean, and noise variance.
     dataset: Dict[Union[int, str], SubDataset], a dictionary mapping from key to
       SubDataset.
@@ -127,17 +135,22 @@ def neg_log_marginal_likelihood(mean_func,
     exclude_aligned: exclude sub-datasets that are aligned.
     return_key2nll: return total_nll together with the dictionary mapping from
       sub-dataset key to its corresponding nll value.
+    use_cholesky: use cholesky to compute NLL if True; otherwise, use SVD. We
+      need the SVD option due to numerical instability of cholesky when the
+      kernel is positive definite but the covariance matrix is numerically low
+      rank.
 
   Returns:
     Negative log marginal likelihood if return_key2nll is False; otherwise a
     tuple consisting of total nll and the sub-dataset key to nll dictionary.
   """
 
-  def compute_nll_sub_dataset(vx, vy):
+  def compute_nll_sub_dataset_cholesky(vx, vy):
     """Compute negative log likelihood for one sub dataset."""
     chol, kinvy, vy = linalg.solve_gp_linear_system(
         mean_func=mean_func,
         cov_func=cov_func,
+        noise_variance_func=noise_variance_func,
         params=params,
         x=vx,
         y=vy,
@@ -145,6 +158,27 @@ def neg_log_marginal_likelihood(mean_func,
     nll_val = jnp.sum(0.5 * jnp.dot(vy.T, kinvy) +
                       jnp.sum(jnp.log(jnp.diag(chol))) +
                       0.5 * len(vx) * jnp.log(2 * jnp.pi))
+    return nll_val
+  def compute_nll_sub_dataset_svd(vx, vy):
+    """Compute negative log likelihood for one sub dataset."""
+    vy, cov = linalg.compute_delta_y_and_cov(
+        mean_func=mean_func,
+        cov_func=cov_func,
+        noise_variance_func=noise_variance_func,
+        params=params,
+        x=vx,
+        y=vy,
+        warp_func=warp_func)
+    (u, s, v) = jspla.svd(cov)
+    if s[-1] <= 0:
+      logging.warning(msg=f'Covariance matrix is low rank. s = {s}')
+    kinv = jnp.dot(v.T, jnp.dot(jnp.diag(s**-1), u.T))
+    kinvy = jnp.dot(kinv, vy)
+    nll_val = 0.5 * jnp.sum(
+        jnp.dot(vy.T, kinvy)
+        + jnp.sum(jnp.log(s))
+        + len(vx) * jnp.log(2 * jnp.pi)
+    )
     return nll_val
 
   total_nll = 0.
@@ -155,7 +189,10 @@ def neg_log_marginal_likelihood(mean_func,
       continue
     if s.x.shape[0] == 0:
       continue
-    key2nll[k] = compute_nll_sub_dataset(s.x, s.y)
+    if use_cholesky:
+      key2nll[k] = compute_nll_sub_dataset_cholesky(s.x, s.y)
+    else:
+      key2nll[k] = compute_nll_sub_dataset_svd(s.x, s.y)
     total_nll += key2nll[k]
     num_sub_datasets += 1
   if num_sub_datasets == 0:

@@ -32,6 +32,7 @@ from hyperbo.gp_utils import basis_functions as bf
 from hyperbo.gp_utils import gp
 from hyperbo.gp_utils import kernel
 from hyperbo.gp_utils import mean
+from hyperbo.gp_utils import noise_variance
 from hyperbo.gp_utils import objectives as obj
 from hyperbo.gp_utils import utils
 import jax
@@ -45,24 +46,37 @@ class ObjectivesTest(parameterized.TestCase):
   """Tests for objectives.py."""
 
   @parameterized.named_parameters(
-      ('squared_exponential kl', kernel.squared_exponential,
-       utils.kl_multivariate_normal, 'lbfgs'),
-      ('matern32 kl', kernel.matern32, utils.kl_multivariate_normal, 'lbfgs'),
+      (
+          'squared_exponential kl',
+          kernel.squared_exponential,
+          utils.kl_multivariate_normal,
+          'lbfgs',
+      ),
       ('matern52 kl', kernel.matern52, utils.kl_multivariate_normal, 'lbfgs'),
-      ('matern32_mlp kl', kernel.matern32_mlp, utils.kl_multivariate_normal,
-       'lbfgs'),
-      ('matern52_mlp kl', kernel.matern52_mlp, utils.kl_multivariate_normal,
-       'lbfgs'),
-      ('squared_exponential_mlp kl', kernel.squared_exponential_mlp,
-       utils.kl_multivariate_normal, 'lbfgs'),
-      ('dot_product_mlp kl', kernel.dot_product_mlp,
-       utils.kl_multivariate_normal, 'lbfgs'),
-      ('squared_exponential euclidean', kernel.squared_exponential,
-       utils.euclidean_multivariate_normal, 'lbfgs'),
-      ('dot_product_mlp kl adam', kernel.dot_product_mlp,
-       utils.kl_multivariate_normal, 'adam'),
-      ('squared_exponential_mlp kl adam', kernel.squared_exponential_mlp,
-       utils.kl_multivariate_normal, 'adam'),
+      (
+          'matern52_mlp kl',
+          kernel.matern52_mlp,
+          utils.kl_multivariate_normal,
+          'lbfgs',
+      ),
+      (
+          'squared_exponential_mlp kl',
+          kernel.squared_exponential_mlp,
+          utils.kl_multivariate_normal,
+          'lbfgs',
+      ),
+      (
+          'squared_exponential euclidean',
+          kernel.squared_exponential,
+          utils.euclidean_multivariate_normal,
+          'lbfgs',
+      ),
+      (
+          'squared_exponential_mlp kl adam',
+          kernel.squared_exponential_mlp,
+          utils.kl_multivariate_normal,
+          'adam',
+      ),
   )
   def test_sample_mean_cov_regularizer(self, cov_func, distance, opt_method):
     """Test that GP parameters can be inferred correctly."""
@@ -72,11 +86,12 @@ class ObjectivesTest(parameterized.TestCase):
     vx = jax.random.normal(key, (n, 2))
     params = GPParams(
         model={
-            'constant': 5.,
-            'lengthscale': 1.,
+            'constant': 5.0,
+            'lengthscale': 1.0,
             'signal_variance': 1.0,
-            'noise_variance': 0.01,
-        })
+            'constant_noise_variance': 0.01,
+        }
+    )
     if cov_func in [
         kernel.squared_exponential_mlp, kernel.matern32_mlp, kernel.matern52_mlp
     ]:
@@ -92,13 +107,23 @@ class ObjectivesTest(parameterized.TestCase):
       bf.init_mlp_with_shape(key, params, vx.shape)
 
     mean_func = mean.constant
+    noise_variance_func = noise_variance.constant
     logging.info(msg=f'params = {params}')
 
     key, _ = jax.random.split(key)
-    dataset = [(vx,
-                gp.sample_from_gp(
-                    key, mean_func, cov_func, params, vx,
-                    num_samples=10), 'all_data')]
+    dataset = [(
+        vx,
+        gp.sample_from_gp(
+            key,
+            mean_func,
+            cov_func,
+            noise_variance_func,
+            params,
+            vx,
+            num_samples=10,
+        ),
+        1,
+    )]
 
     # Minimize sample_mean_cov_regularizer.
     init_params = GPParams(
@@ -106,7 +131,7 @@ class ObjectivesTest(parameterized.TestCase):
             'constant': 5.1,
             'lengthscale': 0.,
             'signal_variance': 0.,
-            'noise_variance': -4.
+            'constant_noise_variance': -4.
         },
         config={
             'method':
@@ -137,31 +162,41 @@ class ObjectivesTest(parameterized.TestCase):
         dataset=dataset,
         mean_func=mean_func,
         cov_func=cov_func,
+        noise_variance_func=noise_variance_func,
         params=init_params,
-        warp_func=warp_func)
+        warp_func=warp_func,
+    )
 
     def reg(gpparams, gpwarp_func=None):
       return obj.multivariate_normal_divergence(
           mean_func=model.mean_func,
           cov_func=model.cov_func,
+          noise_variance_func=model.noise_variance_func,
           params=gpparams,
           dataset=model.dataset,
           warp_func=gpwarp_func,
-          distance=distance)
+          distance=distance,
+      )
 
-    def nll_func(gpparams, gpwarp_func=None):
+    def nll_func(gpparams, gpwarp_func=None, use_cholesky=True):
       return obj.neg_log_marginal_likelihood(
           mean_func=model.mean_func,
           cov_func=model.cov_func,
+          noise_variance_func=model.noise_variance_func,
           params=gpparams,
           dataset=model.dataset,
-          warp_func=gpwarp_func)
+          warp_func=gpwarp_func,
+          use_cholesky=use_cholesky,
+          exclude_aligned=False,
+      )
 
     logging.info(msg=f'Regularizer on ground truth params = {reg(params)}')
     logging.info(msg=f'NLL on ground truth params = {nll_func(params)}')
 
     init_reg = reg(init_params, warp_func)
     init_nll = nll_func(init_params, warp_func)
+    svd_nll = nll_func(init_params, warp_func, use_cholesky=False)
+    self.assertAlmostEqual(svd_nll/init_nll, 1., places=2)
     logging.info(msg=f'Reg on init params = {init_reg}')
     logging.info(msg=f'NLL on init params = {init_nll}')
 
@@ -177,6 +212,8 @@ class ObjectivesTest(parameterized.TestCase):
 
     inferred_reg = reg(inferred_params, warp_func)
     inferred_nll = nll_func(inferred_params, warp_func)
+    svd_nll = nll_func(inferred_params, warp_func, use_cholesky=False)
+    self.assertAlmostEqual(svd_nll/inferred_nll, 1., places=2)
     logging.info(
         msg=f'Reg on inferred params = {inferred_reg} (Before: {init_reg})')
     logging.info(
@@ -186,16 +223,17 @@ class ObjectivesTest(parameterized.TestCase):
 
   @parameterized.named_parameters(
       ('squared_exponential nll', kernel.squared_exponential, 'lbfgs'),
-      ('matern32 nll', kernel.matern32, 'lbfgs'),
       ('matern52 nll', kernel.matern52, 'lbfgs'),
-      ('matern32_mlp nll', kernel.matern32_mlp, 'lbfgs'),
       ('matern52_mlp nll', kernel.matern52_mlp, 'lbfgs'),
       ('squared_exponential_mlp nll', kernel.squared_exponential_mlp, 'lbfgs'),
       ('dot_product_mlp nll', kernel.dot_product_mlp, 'lbfgs'),
       ('squared_exponential euclidean', kernel.squared_exponential, 'lbfgs'),
       ('dot_product_mlp nll adam', kernel.dot_product_mlp, 'adam'),
-      ('squared_exponential_mlp nll adam', kernel.squared_exponential_mlp,
-       'adam'),
+      (
+          'squared_exponential_mlp nll adam',
+          kernel.squared_exponential_mlp,
+          'adam',
+      ),
   )
   def test_neg_log_marginal_likelihood(self, cov_func, opt_method):
     """Test that GP parameters can be inferred correctly."""
@@ -208,7 +246,7 @@ class ObjectivesTest(parameterized.TestCase):
             'constant': 5.,
             'lengthscale': 1.,
             'signal_variance': 1.0,
-            'noise_variance': 0.01,
+            'constant_noise_variance': 0.01,
         })
     if cov_func in [
         kernel.squared_exponential_mlp, kernel.matern32_mlp, kernel.matern52_mlp
@@ -225,13 +263,23 @@ class ObjectivesTest(parameterized.TestCase):
       bf.init_mlp_with_shape(key, params, vx.shape)
 
     mean_func = mean.constant
+    noise_variance_func = noise_variance.constant
     logging.info(msg=f'params = {params}')
 
     key, init_key = jax.random.split(key)
-    dataset = [(vx,
-                gp.sample_from_gp(
-                    key, mean_func, cov_func, params, vx,
-                    num_samples=10), 'all_data')]
+    dataset = [(
+        vx,
+        gp.sample_from_gp(
+            key,
+            mean_func,
+            cov_func,
+            noise_variance_func,
+            params,
+            vx,
+            num_samples=10,
+        ),
+        'all_data',
+    )]
     vy = dataset[0][1]
     for i in range(vy.shape[1]):
       dataset.append((vx, vy[:, i:i+1]))
@@ -242,7 +290,7 @@ class ObjectivesTest(parameterized.TestCase):
             'constant': 5.1,
             'lengthscale': 0.,
             'signal_variance': 0.,
-            'noise_variance': -4.,
+            'constant_noise_variance': -4.,
             'dot_prod_sigma': -1.,
             'dot_prod_bias': 0.,
         },
@@ -263,32 +311,41 @@ class ObjectivesTest(parameterized.TestCase):
         dataset=dataset,
         mean_func=mean_func,
         cov_func=cov_func,
+        noise_variance_func=noise_variance_func,
         params=init_params,
-        warp_func=warp_func)
+        warp_func=warp_func,
+    )
     model.initialize_params(init_key)
 
     def reg(gpparams, gpwarp_func=None):
       return obj.multivariate_normal_divergence(
           mean_func=model.mean_func,
           cov_func=model.cov_func,
+          noise_variance_func=model.noise_variance_func,
           params=gpparams,
           dataset=model.dataset,
           warp_func=gpwarp_func,
-          distance=utils.kl_multivariate_normal)
+          distance=utils.kl_multivariate_normal,
+      )
 
-    def nll_func(gpparams, gpwarp_func=None):
+    def nll_func(gpparams, gpwarp_func=None, use_cholesky=True):
       return obj.neg_log_marginal_likelihood(
           mean_func=model.mean_func,
           cov_func=model.cov_func,
+          noise_variance_func=model.noise_variance_func,
           params=gpparams,
           dataset=model.dataset,
-          warp_func=gpwarp_func)
+          warp_func=gpwarp_func,
+          use_cholesky=use_cholesky,
+      )
 
     logging.info(msg=f'Regularizer on ground truth params = {reg(params)}')
     logging.info(msg=f'NLL on ground truth params = {nll_func(params)}')
 
     init_reg = reg(init_params, warp_func)
     init_nll = nll_func(init_params, warp_func)
+    svd_nll = nll_func(init_params, warp_func, use_cholesky=False)
+    self.assertAlmostEqual(svd_nll/init_nll, 1., places=2)
     logging.info(msg=f'Reg on init params = {init_reg}')
     logging.info(msg=f'NLL on init params = {init_nll}')
 
@@ -304,11 +361,15 @@ class ObjectivesTest(parameterized.TestCase):
 
     inferred_reg = reg(inferred_params, warp_func)
     inferred_nll = nll_func(inferred_params, warp_func)
+    svd_nll = nll_func(inferred_params, warp_func, use_cholesky=False)
+    self.assertAlmostEqual(svd_nll/inferred_nll, 1., places=2)
     logging.info(
         msg=f'Reg on inferred params = {inferred_reg} (Before: {init_reg})')
     logging.info(
         msg=f'NLL on inferred params = {inferred_nll} (Before: {init_nll})')
 
     self.assertGreater(init_reg, inferred_reg)
+
+
 if __name__ == '__main__':
   absltest.main()

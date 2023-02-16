@@ -31,6 +31,7 @@ from hyperbo.gp_utils import basis_functions as bf
 from hyperbo.gp_utils import gp
 from hyperbo.gp_utils import kernel
 from hyperbo.gp_utils import mean
+from hyperbo.gp_utils import noise_variance
 from hyperbo.gp_utils import objectives as obj
 from hyperbo.gp_utils import utils
 import jax
@@ -63,11 +64,12 @@ class GPTest(parameterized.TestCase):
     vx = jax.random.normal(key, (n, 1))
     params = GPParams(
         model={
-            'constant': 5.,
-            'lengthscale': 1.,
+            'constant': 5.0,
+            'lengthscale': 1.0,
             'signal_variance': 1.0,
-            'noise_variance': 0.01,
-        })
+            'constant_noise_variance': 0.01,
+        }
+    )
     if cov_func == kernel.squared_exponential_mlp:
       params.config['mlp_features'] = (8,)
       bf.init_mlp_with_shape(key, params, vx.shape)
@@ -77,11 +79,18 @@ class GPTest(parameterized.TestCase):
       params.config['mlp_features'] = (8,)
       bf.init_mlp_with_shape(key, params, vx.shape)
     mean_func = mean.constant
+    noise_variance_func = noise_variance.constant
     logging.info(msg=f'params = {params}')
 
     def sample_from_gp(seed):
       return gp.sample_from_gp(
-          jax.random.PRNGKey(seed), mean_func, cov_func, params, vx)
+          jax.random.PRNGKey(seed),
+          mean_func,
+          cov_func,
+          noise_variance_func,
+          params,
+          vx,
+      )
 
     dataset = [(vx, sample_from_gp(i)) for i in range(10)]
     dict_dataset = {}
@@ -92,6 +101,7 @@ class GPTest(parameterized.TestCase):
       return obj.neg_log_marginal_likelihood(
           mean_func=mean_func,
           cov_func=cov_func,
+          noise_variance_func=noise_variance_func,
           params=gpparams,
           dataset=dict_dataset,
           warp_func=gpwarp_func)
@@ -102,10 +112,11 @@ class GPTest(parameterized.TestCase):
     init_params = GPParams(
         model={
             'constant': 5.1,
-            'lengthscale': 0.,
-            'signal_variance': 0.,
-            'noise_variance': -4.
-        })
+            'lengthscale': 0.0,
+            'signal_variance': 0.0,
+            'constant_noise_variance': -4.0,
+        }
+    )
     if cov_func == kernel.squared_exponential_mlp:
       init_params.config['mlp_features'] = None
     elif cov_func == kernel.dot_product_mlp:
@@ -128,6 +139,7 @@ class GPTest(parameterized.TestCase):
         dataset=dataset,
         mean_func=mean_func,
         cov_func=cov_func,
+        noise_variance_func=noise_variance_func,
         params=init_params,
         warp_func=warp_func)
     model.initialize_params(init_key)
@@ -156,24 +168,39 @@ class GPTest(parameterized.TestCase):
     vx = jax.random.normal(x_key, (nx, 1))
     params = GPParams(
         model={
-            'constant': 5.,
-            'lengthscale': 1.,
+            'constant': 5.0,
+            'lengthscale': 1.0,
             'signal_variance': 1.0,
-            'noise_variance': 0.01,
-        })
+            'constant_noise_variance': 0.01,
+        }
+    )
     mean_func = mean.constant
     cov_func = kernel.squared_exponential
-    vy = gp.sample_from_gp(y_key, mean_func, cov_func, params, vx)
+    noise_variance_func = noise_variance.constant
+    vy = gp.sample_from_gp(
+        y_key, mean_func, cov_func, noise_variance_func, params, vx
+    )
     x_query = jax.random.normal(q_key, (nq, 1))
     model = gp.GP(
         dataset=[(vx, vy)],
         mean_func=mean_func,
         cov_func=cov_func,
-        params=params)
+        noise_variance_func=noise_variance_func,
+        params=params,
+    )
     mu_model, var_model = model.predict(
-        x_query, full_cov=False, with_noise=True)
+        x_query, full_cov=False, with_noise=True
+    )
     mu, var = gp.predict(
-        mean_func, cov_func, params, vx, vy, x_query, full_cov=False)
+        mean_func,
+        cov_func,
+        noise_variance_func,
+        params,
+        vx,
+        vy,
+        x_query,
+        full_cov=False,
+    )
     self.assertEqual(mu.shape, (nq, 1))
     self.assertEqual(var.shape, (nq, 1))
     self.assertEqual(mu_model.shape, (nq, 1))
@@ -181,16 +208,26 @@ class GPTest(parameterized.TestCase):
     for i in range(len(mu)):
       self.assertAlmostEqual(mu[i], mu_model[i])
     for i in range(len(var)):
-      self.assertAlmostEqual(var[i] + params.model['noise_variance'],
-                             var_model[i])
+      self.assertAlmostEqual(
+          var[i] + params.model['constant_noise_variance'], var_model[i]
+      )
 
     self.assertEqual(model.params.cache[0].needs_update, False)
     self.assertEqual(0 in model.params.cache, True)
 
     mu_, cov = gp.predict(
-        mean_func, cov_func, params, vx, vy, x_query, full_cov=True)
+        mean_func,
+        cov_func,
+        noise_variance_func,
+        params,
+        vx,
+        vy,
+        x_query,
+        full_cov=True,
+    )
     mu_model_, cov_model = model.predict(
-        x_query, full_cov=True, with_noise=True)
+        x_query, full_cov=True, with_noise=True
+    )
     self.assertEqual(mu_.shape, (nq, 1))
     self.assertEqual(cov.shape, (nq, nq))
     self.assertEqual(mu_model_.shape, (nq, 1))
@@ -200,7 +237,9 @@ class GPTest(parameterized.TestCase):
       self.assertAlmostEqual(mu[i], mu_model[i])
     for a, b, c in zip(jnp.diag(cov), var.flatten(), jnp.diag(cov_model)):
       self.assertAlmostEqual(a, b, places=6)
-      self.assertAlmostEqual(c, b + params.model['noise_variance'], places=6)
+      self.assertAlmostEqual(
+          c, b + params.model['constant_noise_variance'], places=6
+      )
     for i in range(len(cov)):
       for j in range(len(cov[0])):
         if i != j:
@@ -214,25 +253,39 @@ class GPTest(parameterized.TestCase):
     vx = jax.random.normal(x_key, (n, dim))
     params = GPParams(
         model={
-            'constant': 5.,
-            'lengthscale': 1.,
+            'constant': 5.0,
+            'lengthscale': 1.0,
             'signal_variance': 1.0,
-            'noise_variance': 0.01,
-        })
+            'constant_noise_variance': 0.01,
+        }
+    )
     mean_func = mean.constant
     cov_func = kernel.squared_exponential
+    noise_variance_func = noise_variance.constant
 
     def sample_from_gp(seed):
       return gp.sample_from_gp(
-          jax.random.PRNGKey(seed), mean_func, cov_func, params, vx)
+          jax.random.PRNGKey(seed),
+          mean_func,
+          cov_func,
+          noise_variance_func,
+          params,
+          vx,
+      )
 
     gp_model = gp.GP(
-        dataset=[], mean_func=mean_func, cov_func=cov_func, params=params)
+        dataset=[],
+        mean_func=mean_func,
+        cov_func=cov_func,
+        noise_variance_func=noise_variance_func,
+        params=params,
+    )
     self.assertEqual(gp_model.dataset, {})
     self.assertEqual(gp_model.params.cache, {})
     x_query = jax.random.normal(q_key, (nq, dim))
     mu_model, var_model = gp_model.predict(
-        x_query, full_cov=False, with_noise=True)
+        x_query, full_cov=False, with_noise=True
+    )
 
     self.assertEqual(mu_model.shape, (nq, 1))
     self.assertEqual(var_model.shape, (nq, 1))
@@ -284,18 +337,21 @@ class GPTest(parameterized.TestCase):
     vx = jax.random.normal(x_key, (nx, 1))
     params = GPParams(
         model={
-            'constant': 5.,
-            'lengthscale': 1.,
+            'constant': 5.0,
+            'lengthscale': 1.0,
             'signal_variance': 1.0,
-            'noise_variance': 0.01,
-        })
+            'constant_noise_variance': 0.01,
+        }
+    )
     mean_func = mean.constant
     cov_func = kernel.squared_exponential
+    noise_variance_func = noise_variance.constant
     for method in ['svd', 'cholesky']:
       vy = gp.sample_from_gp(
           y_key,
           mean_func,
           cov_func,
+          noise_variance_func,
           params,
           vx,
           num_samples=num_samples,

@@ -31,6 +31,7 @@ from hyperbo.bo_utils import const
 from hyperbo.bo_utils import data
 from hyperbo.gp_utils import kernel
 from hyperbo.gp_utils import mean
+from hyperbo.gp_utils import noise_variance
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -51,7 +52,7 @@ class BayesOptTest(parameterized.TestCase):
             'constant': 5.,
             'lengthscale': 1.,
             'signal_variance': 1.0,
-            'noise_variance': 0.01,
+            'constant_noise_variance': 0.01,
         },
         config={
             'method': 'adam',
@@ -61,17 +62,20 @@ class BayesOptTest(parameterized.TestCase):
         })
     mean_func = mean.constant
     cov_func = kernel.squared_exponential
+    noise_variance_func = noise_variance.constant
 
     dataset, sub_dataset_key, queried_sub_dataset = data.random(
         key=key,
         mean_func=mean_func,
         cov_func=cov_func,
+        noise_variance_func=noise_variance_func,
         params=params,
         dim=5,
         n_observed=0,
         n_queries=30,
         n_func_historical=2,
-        m_points_historical=10)
+        m_points_historical=10,
+    )
     self.assertLen(dataset, 3)
     for i in range(2):
       d = dataset[i]
@@ -82,20 +86,22 @@ class BayesOptTest(parameterized.TestCase):
         msg=f'dataset: {jax.tree_map(jnp.shape, dataset)}, '
         f'queried sub-dataset key: {sub_dataset_key}'
         f'queried sub-dataset: {jax.tree_map(jnp.shape, queried_sub_dataset)}')
-    observations, queries, params_dict = bayesopt.run_bayesopt(
+    observations, queries, params = bayesopt.run_bayesopt(
         dataset=dataset,
         sub_dataset_key=sub_dataset_key,
         queried_sub_dataset=queried_sub_dataset,
         mean_func=mean_func,
         cov_func=cov_func,
+        noise_variance_func=noise_variance_func,
         init_params=params,
         ac_func=ac_func,
         iters=3,
-        init_random_key=key)
+        init_random_key=key,
+    )
 
     logging.info(
         msg=f'observations: {observations}, best query:{max(queries[1])}')
-    logging.info(msg=f'params_dict:{params_dict}')
+    logging.info(msg=f'params:{params}')
 
     self.assertEqual(observations[0].shape, (3, 5))
     self.assertEqual(observations[1].shape, (3, 1))

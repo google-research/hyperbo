@@ -29,7 +29,6 @@ from hyperbo.basics import lbfgs
 from hyperbo.basics import linalg
 from hyperbo.basics import params_utils
 from hyperbo.gp_utils import basis_functions as bf
-from hyperbo.gp_utils import kernel
 from hyperbo.gp_utils import objectives as obj
 from hyperbo.gp_utils import utils
 import jax
@@ -40,11 +39,8 @@ import jax.scipy as jsp
 import optax
 
 
-grad = jax.grad
 jit = jax.jit
 vmap = jax.vmap
-
-retrieve_params = params_utils.retrieve_params
 
 GPCache = defs.GPCache
 SubDataset = defs.SubDataset
@@ -53,6 +49,7 @@ GPParams = defs.GPParams
 
 def infer_parameters(mean_func,
                      cov_func,
+                     noise_variance_func,
                      init_params,
                      dataset,
                      warp_func=None,
@@ -69,6 +66,9 @@ def infer_parameters(mean_func,
     cov_func: covariance function handle that maps from (params, n1 x d input1,
       n2 x d input2, wrap_func) to a n1 x n2  covariance matrix (see matrix_map
       in kernel.py for more details).
+    noise_variance_func: noise variance function handle that maps from (params,
+      n x d input, warp_func) to an n dimensional noise variance func vector.
+      (see vector_map in noise_variance_func.py for more details).
     init_params: GPParams, initial parameters for covariance, mean and noise
       variance, together with config parameters including 'method', a str
       indicating which method should be used. Currently it supports 'bfgs' and
@@ -113,11 +113,11 @@ def infer_parameters(mean_func,
     return init_params
 
   if method == 'adam':
-    @jit
     def loss_func(model_params, batch):
       return objective(
           mean_func=mean_func,
           cov_func=cov_func,
+          noise_variance_func=noise_variance_func,
           params=GPParams(model=model_params, config=init_params.config),
           dataset=batch,
           warp_func=warp_func)
@@ -132,10 +132,13 @@ def infer_parameters(mean_func,
     for i in range(max_training_step):
       batch = next(dataset_iter)
       current_loss, grads = jax.value_and_grad(loss_func)(model_param, batch)
+      if jnp.isnan(current_loss) and i == 0:
+        raise ValueError(f'Encountered NaN in loss function. current_loss = '
+                         f'{current_loss}, grads = {grads}.')
       if jnp.isfinite(current_loss):
         params.model = model_param
       else:
-        logging.info(msg=f'{method} stopped due to instability.')
+        logging.info(msg=f'{method} stopped at step {i} due to instability.')
         break
       updates, opt_state = optimizer.update(grads, opt_state)
       model_param = optax.apply_updates(model_param, updates)
@@ -151,11 +154,11 @@ def infer_parameters(mean_func,
         warp_func=warp_func,
         params_save_file=get_params_path())
   else:
-    @jit
     def loss_func(model_params):
       return objective(
           mean_func=mean_func,
           cov_func=cov_func,
+          noise_variance_func=noise_variance_func,
           params=GPParams(model=model_params, config=init_params.config),
           dataset=dataset,
           warp_func=warp_func)
@@ -193,12 +196,14 @@ def infer_parameters(mean_func,
 def sample_from_gp(key,
                    mean_func,
                    cov_func,
+                   noise_variance_func,
                    params,
                    x,
                    warp_func=None,
                    num_samples=1,
                    method='cholesky',
-                   eps=1e-6):
+                   eps=1e-6,
+                   with_noise=True):
   """Sample a function from a GP and return its evaluations on x (n x d).
 
   Args:
@@ -209,6 +214,9 @@ def sample_from_gp(key,
     cov_func: covariance function handle that maps from (params, n1 x d input1,
       n2 x d input2, wrap_func) to a n1 x n2  covariance matrix (see matrix_map
       in kernel.py for more details).
+    noise_variance_func: noise variance function handle that maps from (params,
+      n x d input, warp_func) to an n dimensional noise variance func vector.
+      (see vector_map in noise_variance_func.py for more details).
     params: parameters for covariance, mean, and noise variance.
     x: n x d dimensional input array.
     warp_func: optional dictionary that specifies the warping function for each
@@ -217,25 +225,29 @@ def sample_from_gp(key,
     method: the decomposition method to invert the cov matrix.
     eps: extra value added to the diagonal of the covariance matrix for
       numerical stability.
+    with_noise: sample from the GP with observation noise.
 
   Returns:
     n x num_samples funcion evaluations on x. Each function is a sample from the
     GP.
   """
   mean = mean_func(params, x, warp_func=warp_func)
-  noise_variance, = retrieve_params(
-      params, ['noise_variance'], warp_func=warp_func)
+  if with_noise:
+    noise_variance = noise_variance_func(params, x, warp_func=warp_func)
+  else:
+    noise_variance = jnp.zeros_like(mean)
   cov = cov_func(params, x, warp_func=warp_func)
   return (jax.random.multivariate_normal(
       key,
       mean.flatten(),
-      cov + jnp.eye(len(x)) * (noise_variance + eps),
+      cov + jnp.diag(noise_variance.flatten() + eps),
       shape=(num_samples,),
       method=method)).T
 
 
 def predict(mean_func,
             cov_func,
+            noise_variance_func,
             params,
             x_observed,
             y_observed,
@@ -252,6 +264,9 @@ def predict(mean_func,
     cov_func: covariance function handle that maps from (params, n1 x d input1,
       n2 x d input2, wrap_func) to a n1 x n2  covariance matrix (see matrix_map
       in kernel.py for more details).
+    noise_variance_func: noise variance function handle that maps from (params,
+      n x d input, warp_func) to an n dimensional noise variance func vector.
+      (see vector_map in noise_variance_func.py for more details).
     params: parameters for covariance, mean, and noise variance.
     x_observed: observed n x d input array.
     y_observed: observed n x 1 evaluations on the input x_observed.
@@ -281,6 +296,7 @@ def predict(mean_func,
     chol, kinvy, _ = linalg.solve_gp_linear_system(
         mean_func=mean_func,
         cov_func=cov_func,
+        noise_variance_func=noise_variance_func,
         params=params,
         x=x_observed,
         y=y_observed,
@@ -312,22 +328,30 @@ class GP:
     cov_func: covariance function handle that maps from (params, n1 x d input1,
       n2 x d input2, wrap_func) to a n1 x n2  covariance matrix (see matrix_map
       in kernel.py for more details).
+    noise_variance_func: noise variance function handle that maps from (params,
+      n x d input, warp_func) to an n dimensional noise variance func vector.
+      (see vector_map in noise_variance_func.py for more details).
     params: GPParams, parameters for covariance, mean, and noise variance.
     warp_func: optional dictionary that specifies the warping function for each
       parameter.
     input_dim: dimension of input variables.
     rng: Jax random state.
   """
+
   dataset: Dict[Union[int, str], SubDataset]
 
-  def __init__(self,
-               dataset: defs.AllowedDatasetTypes,
-               mean_func: Callable[..., jnp.array],
-               cov_func: Callable[..., jnp.array],
-               params: GPParams,
-               warp_func: defs.WarpFuncType = None):
+  def __init__(
+      self,
+      dataset: defs.AllowedDatasetTypes,
+      mean_func: Callable[..., jnp.array],
+      cov_func: Callable[..., jnp.array],
+      noise_variance_func: Callable[..., jnp.array],
+      params: GPParams,
+      warp_func: defs.WarpFuncType = None,
+  ):
     self.mean_func = mean_func
     self.cov_func = cov_func
+    self.noise_variance_func = noise_variance_func
     if params is not None:
       self.params = params
     else:
@@ -345,13 +369,18 @@ class GP:
     logging.info(msg=f'dataset: {jax.tree_map(jnp.shape, self.dataset)}')
 
     if isinstance(self.params.config['objective'], str):
-      self.params.config['objective'] = getattr(obj,
-                                                self.params.config['objective'])
-    def check_param(name, param_type, params_dict=self.params.model):
-      return name in params_dict and isinstance(
-          params_dict[name], param_type)
+      self.params.config['objective'] = getattr(
+          obj, self.params.config['objective']
+      )
 
-    if 'mlp' in self.mean_func.__name__ or 'mlp' in self.cov_func.__name__:
+    def check_param(name, param_type, params_dict=self.params.model):
+      return name in params_dict and isinstance(params_dict[name], param_type)
+
+    if (
+        'mlp' in self.mean_func.__name__
+        or 'mlp' in self.cov_func.__name__
+        or 'mlp' in self.noise_variance_func.__name__
+    ):
       if not check_param('mlp_features', tuple, self.params.config):
         self.params.config['mlp_features'] = (2 * self.input_dim,)
       last_layer_size = self.params.config['mlp_features'][-1]
@@ -366,6 +395,7 @@ class GP:
                    f'{jax.tree_map(jnp.shape, mlp_params)}')
     else:
       last_layer_size = self.input_dim
+
     if 'linear' in self.mean_func.__name__:
       if check_param('linear_mean', flax.core.frozen_dict.FrozenDict):
         flag = 'Retained'
@@ -378,15 +408,26 @@ class GP:
       linear_mean = self.params.model['linear_mean']
       logging.info(msg=f'{flag} linear_mean: '
                    f'{jax.tree_map(jnp.shape, linear_mean)}')
-    if self.cov_func in [
-        kernel.matern32, kernel.matern52, kernel.squared_exponential
-    ]:
-      if check_param('lengthscale', jnp.ndarray):
+
+    if 'linear' in self.noise_variance_func.__name__:
+      if check_param('linear_noise_variance', flax.core.frozen_dict.FrozenDict):
         flag = 'Retained'
-      elif check_param('lengthscale', float):
-        uni_lengthscale = self.params.model['lengthscale']
-        self.params.model['lengthscale'] = jnp.ones(
-            last_layer_size) * uni_lengthscale
+      else:
+        key, subkey = jax.random.split(key)
+        self.params.model['linear_noise_variance'] = nn.Dense(1).init(
+            subkey, jnp.empty((0, last_layer_size)))['params']
+        flag = 'Initialized'
+
+      linear_noise_variance = self.params.model['linear_noise_variance']
+      logging.info(msg=f'{flag} linear_noise_variance: '
+                   f'{jax.tree_map(jnp.shape, linear_noise_variance)}')
+
+    if check_param('lengthscale', jnp.ndarray):
+      flag = 'Retained'
+    elif check_param('lengthscale', float):
+      uni_lengthscale = self.params.model['lengthscale']
+      self.params.model['lengthscale'] = jnp.ones(
+          last_layer_size) * uni_lengthscale
     self.rng = key
 
   def set_dataset(self, dataset: Union[List[Union[Tuple[jnp.ndarray, ...],
@@ -463,6 +504,7 @@ class GP:
     self.params = infer_parameters(
         mean_func=self.mean_func,
         cov_func=self.cov_func,
+        noise_variance_func=self.noise_variance_func,
         init_params=self.params,
         dataset=self.dataset,
         warp_func=self.warp_func,
@@ -479,10 +521,12 @@ class GP:
     return obj.neg_log_marginal_likelihood(
         mean_func=self.mean_func,
         cov_func=self.cov_func,
+        noise_variance_func=self.noise_variance_func,
         params=self.params,
         dataset=self.dataset,
         warp_func=self.warp_func,
-        return_key2nll=True)
+        return_key2nll=True,
+        use_cholesky=False)
 
   def empirical_divergence(self,
                            distance=utils.kl_multivariate_normal) -> float:
@@ -490,6 +534,7 @@ class GP:
     return obj.multivariate_normal_divergence(
         mean_func=self.mean_func,
         cov_func=self.cov_func,
+        noise_variance_func=self.noise_variance_func,
         params=self.params,
         dataset=self.dataset,
         warp_func=self.warp_func,
@@ -531,6 +576,7 @@ class GP:
     chol, kinvy, _ = linalg.solve_gp_linear_system(
         mean_func=self.mean_func,
         cov_func=self.cov_func,
+        noise_variance_func=self.noise_variance_func,
         params=self.params,
         x=self.dataset[sub_dataset_key].x,
         y=self.dataset[sub_dataset_key].y,
@@ -562,6 +608,7 @@ class GP:
       mu, cov = predict(
           mean_func=self.mean_func,
           cov_func=self.cov_func,
+          noise_variance_func=self.noise_variance_func,
           params=self.params,
           x_observed=None,
           y_observed=None,
@@ -573,26 +620,30 @@ class GP:
       mu, cov = predict(
           mean_func=self.mean_func,
           cov_func=self.cov_func,
+          noise_variance_func=self.noise_variance_func,
           params=self.params,
           x_observed=self.dataset[sub_dataset_key].x,
           y_observed=self.dataset[sub_dataset_key].y,
           x_query=queried_inputs,
           warp_func=self.warp_func,
           full_cov=full_cov,
-          cache=self.params.cache[sub_dataset_key])
+          cache=self.params.cache[sub_dataset_key],
+      )
 
     if with_noise:
-      noise_variance, = retrieve_params(
-          self.params, ['noise_variance'], warp_func=self.warp_func)
+      noise_variance = self.noise_variance_func(
+          self.params, queried_inputs, warp_func=self.warp_func
+      )
       if full_cov:
-        cov += jnp.eye(cov.shape[0]) * (noise_variance)
+        cov += jnp.diag(noise_variance.flatten())
       else:
         cov += noise_variance
     if unbiased:
       len_dataset = len(
-          [k for k, v in self.dataset.items() if v.aligned is None])
+          [k for k, v in self.dataset.items() if v.aligned is None]
+      )
       if len_dataset > 1:
-        scale = len_dataset / (len_dataset - 1.)
+        scale = len_dataset / (len_dataset - 1.0)
         cov *= scale
     return mu, cov
 

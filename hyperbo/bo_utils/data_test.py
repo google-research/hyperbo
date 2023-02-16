@@ -30,6 +30,7 @@ from hyperbo.bo_utils import const
 from hyperbo.bo_utils import data
 from hyperbo.gp_utils import kernel
 from hyperbo.gp_utils import mean
+from hyperbo.gp_utils import noise_variance
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -54,14 +55,16 @@ class DataTest(parameterized.TestCase):
               'constant': 5.,
               'lengthscale': 1.,
               'signal_variance': 1.0,
-              'noise_variance': 0.01,
+              'constant_noise_variance': 0.01,
           })
       mean_func = mean.constant
       cov_func = kernel.squared_exponential
+      noise_variance_func = noise_variance.constant
       dataset, sub_dataset_key, queried_subdataset = dataset_creator(
           key=key,
           mean_func=mean_func,
           cov_func=cov_func,
+          noise_variance_func=noise_variance_func,
           params=params,
           dim=dim,
           n_observed=n_observed,

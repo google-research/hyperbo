@@ -37,9 +37,9 @@ constant_prior = lambda x: jnp.sum(tfd.Normal(0., 1.).log_prob(x))
 horseshoe_prior = lambda x, tau: jnp.log(jnp.log(1. + 3. * (tau / x)**2))
 
 DEFAULT_PRIORS = {
-    # 'kumar_params': kumar_prior,
-    'noise_variance': noise_prior,
+    'kumar_params': kumar_prior,
+    'constant_noise_variance': noise_prior,
     'signal_variance': lognormal_prior,
-    # 'lengthscale': lognormal_prior,
+    'lengthscale': lognormal_prior,
     'constant': constant_prior,
 }

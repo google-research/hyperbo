@@ -193,6 +193,7 @@ def run_bayesopt(
     queried_sub_dataset: Union[SubDataset, Callable[[Any], Any]],
     mean_func: Callable[..., jnp.array],
     cov_func: Callable[..., jnp.array],
+    noise_variance_func: Callable[..., jnp.array],
     init_params: defs.GPParams,
     ac_func: Callable[..., jnp.array],
     iters: int,
@@ -202,7 +203,7 @@ def run_bayesopt(
     init_model: bool = False,
     data_loader_name: str = '',
     get_params_path: Optional[Callable[[Any], Any]] = None,
-    callback: Optional[Callable[[Any], Any]] = None,
+    callback: Optional[Callable[[Any, Any, Any], Any]] = None,
     save_retrain_model: bool = False):
   """Running bayesopt experiment with synthetic data.
 
@@ -218,6 +219,9 @@ def run_bayesopt(
     cov_func: covariance function handle that maps from (params, n1 x d input1,
       n2 x d input2, wrap_func) to a n1 x n2 covariance matrix (see matrix_map
       in kernel.py for more details).
+    noise_variance_func: noise variance function handle that maps from (params,
+      n x d input, warp_func) to an n dimensional noise variance func vector.
+      (see vector_map in noise_variance_func.py for more details).
     init_params: initial GP parameters for inference.
     ac_func: acquisition function handle (see acfun.py).
     iters: Number of iterations in sequential bayesopt queries.
@@ -233,8 +237,8 @@ def run_bayesopt(
     save_retrain_model: save retrained model iif True.
 
   Returns:
-    All observations in (x, y) pairs returned by the bayesopt strategy and all
-    the best query point as in (x, y) pair. Model params as a dict.
+    All observations as in (SubDataset.x, SubDataset.y) returned by the bayesopt
+    strategy. The best query point as in (x, y) pair. Model params (GPParams).
   """
   logging.info(msg=f'run_synthetic is using method {method}.')
   if method in const.USE_HGP:
@@ -253,6 +257,7 @@ def run_bayesopt(
       dataset=dataset,
       mean_func=mean_func,
       cov_func=cov_func,
+      noise_variance_func=noise_variance_func,
       params=init_params,
       warp_func=warp_func)
   key = init_random_key
@@ -276,7 +281,7 @@ def run_bayesopt(
         get_params_path=get_params_path if save_retrain_model else None,
         callback=callback if save_retrain_model else None)
     return (sub_dataset.x,
-            sub_dataset.y), best_query, model.params.__dict__
+            sub_dataset.y), best_query, model.params
   else:
     if data_loader_name not in INPUT_SAMPLERS:
       raise NotImplementedError(
@@ -289,7 +294,7 @@ def run_bayesopt(
         ac_func=ac_func,
         iters=iters,
         input_sampler=INPUT_SAMPLERS[data_loader_name])
-    return (sub_dataset.x, sub_dataset.y), None, model.params.__dict__
+    return (sub_dataset.x, sub_dataset.y), None, model.params
 
 
 def _onehot_matrix(shape, idx) -> np.ndarray:
