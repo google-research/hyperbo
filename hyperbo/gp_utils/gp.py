@@ -29,7 +29,6 @@ from hyperbo.basics import lbfgs
 from hyperbo.basics import linalg
 from hyperbo.basics import params_utils
 from hyperbo.gp_utils import basis_functions as bf
-from hyperbo.gp_utils import kernel
 from hyperbo.gp_utils import objectives as obj
 from hyperbo.gp_utils import utils
 import jax
@@ -132,10 +131,13 @@ def infer_parameters(mean_func,
     for i in range(max_training_step):
       batch = next(dataset_iter)
       current_loss, grads = jax.value_and_grad(loss_func)(model_param, batch)
+      if jnp.isnan(current_loss) and i == 0:
+        raise ValueError(f'Encountered NaN in loss function. current_loss = '
+                         f'{current_loss}, grads = {grads}.')
       if jnp.isfinite(current_loss):
         params.model = model_param
       else:
-        logging.info(msg=f'{method} stopped due to instability.')
+        logging.info(msg=f'{method} stopped at step {i} due to instability.')
         break
       updates, opt_state = optimizer.update(grads, opt_state)
       model_param = optax.apply_updates(model_param, updates)
@@ -378,15 +380,13 @@ class GP:
       linear_mean = self.params.model['linear_mean']
       logging.info(msg=f'{flag} linear_mean: '
                    f'{jax.tree_map(jnp.shape, linear_mean)}')
-    if self.cov_func in [
-        kernel.matern32, kernel.matern52, kernel.squared_exponential
-    ]:
-      if check_param('lengthscale', jnp.ndarray):
-        flag = 'Retained'
-      elif check_param('lengthscale', float):
-        uni_lengthscale = self.params.model['lengthscale']
-        self.params.model['lengthscale'] = jnp.ones(
-            last_layer_size) * uni_lengthscale
+
+    if check_param('lengthscale', jnp.ndarray):
+      flag = 'Retained'
+    elif check_param('lengthscale', float):
+      uni_lengthscale = self.params.model['lengthscale']
+      self.params.model['lengthscale'] = jnp.ones(
+          last_layer_size) * uni_lengthscale
     self.rng = key
 
   def set_dataset(self, dataset: Union[List[Union[Tuple[jnp.ndarray, ...],
@@ -482,7 +482,8 @@ class GP:
         params=self.params,
         dataset=self.dataset,
         warp_func=self.warp_func,
-        return_key2nll=True)
+        return_key2nll=True,
+        use_cholesky=False)
 
   def empirical_divergence(self,
                            distance=utils.kl_multivariate_normal) -> float:

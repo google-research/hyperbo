@@ -35,6 +35,42 @@ def solve_linear_system(coeff, b):
   return chol, kinvy
 
 
+def compute_delta_y_and_cov(mean_func,
+                            cov_func,
+                            params,
+                            x,
+                            y,
+                            warp_func=None,
+                            eps=1e-6):
+  """Compute y-mu(x) and cov(x,x)+I*sigma^2.
+
+  Args:
+    mean_func: mean function handle that maps from (params, n x d input,
+      warp_func) to an n dimensional mean vector. (see vector_map in mean.py for
+      more details).
+    cov_func: covariance function handle that maps from (params, n1 x d input1,
+      n2 x d input2, wrap_func) to a n1 x n2  covariance matrix (see matrix_map
+      in kernel.py for more details).
+    params: parameters for the GP.
+    x: n x d dimensional input array for n data points.
+    y: n x 1 dimensional evaluation array for n data points.
+    warp_func: optional dictionary that specifies the warping function for each
+      parameter.
+    eps: extra value added to the diagonal of the covariance matrix for
+      numerical stability.
+
+  Returns:
+    y-mu(x) and cov(x,x)+I*sigma^2.
+  """
+  y = y - jnp.atleast_2d(mean_func(params, x, warp_func=warp_func))
+  noise_variance, = params_utils.retrieve_params(
+      params, ['noise_variance'], warp_func=warp_func)
+  cov = cov_func(
+      params, x, warp_func=warp_func) + jnp.eye(len(x)) * (
+          noise_variance + eps)
+  return y, cov
+
+
 def solve_gp_linear_system(mean_func,
                            cov_func,
                            params,
@@ -69,12 +105,9 @@ def solve_gp_linear_system(mean_func,
     already subtracted mean.
     y: y value with mean subtracted.
   """
-  y = y - jnp.atleast_2d(mean_func(params, x, warp_func=warp_func))
-  noise_variance, = params_utils.retrieve_params(
-      params, ['noise_variance'], warp_func=warp_func)
-  cov = cov_func(
-      params, x, warp_func=warp_func) + jnp.eye(len(x)) * (
-          noise_variance + eps)
+  y, cov = compute_delta_y_and_cov(
+      mean_func, cov_func, params, x, y, warp_func, eps
+  )
   chol, kinvy = solve_linear_system(cov, y)
   return chol, kinvy, y
 

@@ -563,21 +563,27 @@ def get_output_warper(output_log_warp=True, return_warping=False):
   return output_warper
 
 
-def hpob_dataset(search_space_index,
-                 test_dataset_id_index,
+def normalize(y, eps=1e-12):
+  """Normalize a vector."""
+  return (y - np.min(y)) / (np.max(y) - np.min(y) + eps)
+
+
+def hpob_dataset(search_space,
+                 test_dataset_id,
                  test_seed,
                  output_log_warp=True,
                  test_only=False,
                  n_remain=-1,
-                 remain_random_key=None):
+                 remain_random_key=None,
+                 normalize_y=False):
   """Load the original finite hpob dataset by search space and test dataset id.
 
   To use the HPO-B dataset, download data and import hpob_handler from
     https://github.com/releaunifreiburg/HPO-B.
 
   Args:
-    search_space_index: int index or string of a search space.
-    test_dataset_id_index: int index or string of test dataset.
+    search_space: string of the search space.
+    test_dataset_id: string of the test dataset.
     test_seed: Identifier of the seed for the evaluation. Options: test0, test1,
       test2, test3, test4.
     output_log_warp: log warp on output with max assumed to be 1.
@@ -585,6 +591,7 @@ def hpob_dataset(search_space_index,
     n_remain: number of trainnig datapoints per training task.
       Keep all datapoints if n_remain <= 0.
     remain_random_key: Jax PRNGKey.
+    normalize_y: normalize all y values for each subdataset if True.
 
   Returns:
     dataset: Dict[str, SubDataset], mapping from study group to a SubDataset.
@@ -601,24 +608,6 @@ def hpob_dataset(search_space_index,
     handler = hpob_handler.HPOBHandler(root_dir=HPOB_ROOT_DIR, mode='v3-test')
   else:
     handler = hpob_handler.HPOBHandler(root_dir=HPOB_ROOT_DIR, mode='v3')
-  if isinstance(search_space_index, str):
-    search_space = search_space_index
-  elif isinstance(search_space_index, int):
-    if test_only:
-      raise ValueError('Cannot use int search_space_index if test_only.')
-    spaces = list(handler.meta_train_data.keys())
-    spaces.sort()
-    search_space = spaces[search_space_index]
-  else:
-    raise ValueError('search_space_index must be str or int.')
-  if isinstance(test_dataset_id_index, str):
-    test_dataset_id = test_dataset_id_index
-  elif isinstance(test_dataset_id_index, int):
-    test_dataset_ids = list(handler.meta_test_data[search_space].keys())
-    test_dataset_ids.sort()
-    test_dataset_id = test_dataset_ids[test_dataset_id_index]
-  else:
-    raise ValueError('test_dataset_id_index must be str or int.')
   dataset = {}
   output_warper = get_output_warper(output_log_warp)
   if not test_only:
@@ -627,14 +616,16 @@ def hpob_dataset(search_space_index,
           handler.meta_train_data[search_space][dataset_id]['X'])
       train_y = jnp.array(
           handler.meta_train_data[search_space][dataset_id]['y'])
-      if n_remain > 0 and train_x.shape[0] > n_remain:
+      if normalize_y:
+        train_y = normalize(train_y)
+      if n_remain >= 0 and train_x.shape[0] > n_remain:
         remain_random_key, subkey = jax.random.split(remain_random_key)
         indices = jax.random.permutation(subkey, train_x.shape[0])
         indices = indices[:n_remain]
         train_x = train_x[indices]
         train_y = train_y[indices]
-      train_x = output_warper(train_x)
-      train_y = output_warper(train_y)
+      if output_log_warp:
+        train_y = output_warper(train_y)
       dataset[dataset_id] = SubDataset(x=train_x, y=train_y)
   if test_seed in ['test0', 'test1', 'test2', 'test3', 'test4']:
     init_index = handler.bo_initializations[search_space][test_dataset_id][
@@ -643,6 +634,8 @@ def hpob_dataset(search_space_index,
         handler.meta_test_data[search_space][test_dataset_id]['X'])
     test_y = np.array(
         handler.meta_test_data[search_space][test_dataset_id]['y'])
+    if normalize_y:
+      test_y = normalize(test_y)
     if output_log_warp:
       # if output_log_warp is True, warp the clipped init y without surrogate.
       test_y = output_warper(test_y)

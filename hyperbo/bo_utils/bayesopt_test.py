@@ -82,7 +82,7 @@ class BayesOptTest(parameterized.TestCase):
         msg=f'dataset: {jax.tree_map(jnp.shape, dataset)}, '
         f'queried sub-dataset key: {sub_dataset_key}'
         f'queried sub-dataset: {jax.tree_map(jnp.shape, queried_sub_dataset)}')
-    observations, queries, params_dict = bayesopt.run_bayesopt(
+    observations, queries, params = bayesopt.run_bayesopt(
         dataset=dataset,
         sub_dataset_key=sub_dataset_key,
         queried_sub_dataset=queried_sub_dataset,
@@ -95,7 +95,7 @@ class BayesOptTest(parameterized.TestCase):
 
     logging.info(
         msg=f'observations: {observations}, best query:{max(queries[1])}')
-    logging.info(msg=f'params_dict:{params_dict}')
+    logging.info(msg=f'params:{params}')
 
     self.assertEqual(observations[0].shape, (3, 5))
     self.assertEqual(observations[1].shape, (3, 1))

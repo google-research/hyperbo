@@ -202,7 +202,7 @@ def run_bayesopt(
     init_model: bool = False,
     data_loader_name: str = '',
     get_params_path: Optional[Callable[[Any], Any]] = None,
-    callback: Optional[Callable[[Any], Any]] = None,
+    callback: Optional[Callable[[Any, Any, Any], Any]] = None,
     save_retrain_model: bool = False):
   """Running bayesopt experiment with synthetic data.
 
@@ -234,7 +234,7 @@ def run_bayesopt(
 
   Returns:
     All observations in (x, y) pairs returned by the bayesopt strategy and all
-    the best query point as in (x, y) pair. Model params as a dict.
+    the best query point as in (x, y) pair. Model params.
   """
   logging.info(msg=f'run_synthetic is using method {method}.')
   if method in const.USE_HGP:
@@ -276,7 +276,7 @@ def run_bayesopt(
         get_params_path=get_params_path if save_retrain_model else None,
         callback=callback if save_retrain_model else None)
     return (sub_dataset.x,
-            sub_dataset.y), best_query, model.params.__dict__
+            sub_dataset.y), best_query, model.params
   else:
     if data_loader_name not in INPUT_SAMPLERS:
       raise NotImplementedError(
@@ -289,7 +289,7 @@ def run_bayesopt(
         ac_func=ac_func,
         iters=iters,
         input_sampler=INPUT_SAMPLERS[data_loader_name])
-    return (sub_dataset.x, sub_dataset.y), None, model.params.__dict__
+    return (sub_dataset.x, sub_dataset.y), None, model.params
 
 
 def _onehot_matrix(shape, idx) -> np.ndarray:

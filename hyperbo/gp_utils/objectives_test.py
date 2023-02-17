@@ -149,19 +149,23 @@ class ObjectivesTest(parameterized.TestCase):
           warp_func=gpwarp_func,
           distance=distance)
 
-    def nll_func(gpparams, gpwarp_func=None):
+    def nll_func(gpparams, gpwarp_func=None, use_cholesky=True):
       return obj.neg_log_marginal_likelihood(
           mean_func=model.mean_func,
           cov_func=model.cov_func,
           params=gpparams,
           dataset=model.dataset,
-          warp_func=gpwarp_func)
+          warp_func=gpwarp_func,
+          use_cholesky=use_cholesky,
+          exclude_aligned=False)
 
     logging.info(msg=f'Regularizer on ground truth params = {reg(params)}')
     logging.info(msg=f'NLL on ground truth params = {nll_func(params)}')
 
     init_reg = reg(init_params, warp_func)
     init_nll = nll_func(init_params, warp_func)
+    svd_nll = nll_func(init_params, warp_func, use_cholesky=False)
+    self.assertAlmostEqual(svd_nll/init_nll, 1., places=2)
     logging.info(msg=f'Reg on init params = {init_reg}')
     logging.info(msg=f'NLL on init params = {init_nll}')
 
@@ -177,6 +181,8 @@ class ObjectivesTest(parameterized.TestCase):
 
     inferred_reg = reg(inferred_params, warp_func)
     inferred_nll = nll_func(inferred_params, warp_func)
+    svd_nll = nll_func(inferred_params, warp_func, use_cholesky=False)
+    self.assertAlmostEqual(svd_nll/inferred_nll, 1., places=2)
     logging.info(
         msg=f'Reg on inferred params = {inferred_reg} (Before: {init_reg})')
     logging.info(
@@ -276,19 +282,23 @@ class ObjectivesTest(parameterized.TestCase):
           warp_func=gpwarp_func,
           distance=utils.kl_multivariate_normal)
 
-    def nll_func(gpparams, gpwarp_func=None):
+    def nll_func(gpparams, gpwarp_func=None, use_cholesky=True):
       return obj.neg_log_marginal_likelihood(
           mean_func=model.mean_func,
           cov_func=model.cov_func,
           params=gpparams,
           dataset=model.dataset,
-          warp_func=gpwarp_func)
+          warp_func=gpwarp_func,
+          use_cholesky=use_cholesky,
+      )
 
     logging.info(msg=f'Regularizer on ground truth params = {reg(params)}')
     logging.info(msg=f'NLL on ground truth params = {nll_func(params)}')
 
     init_reg = reg(init_params, warp_func)
     init_nll = nll_func(init_params, warp_func)
+    svd_nll = nll_func(init_params, warp_func, use_cholesky=False)
+    self.assertAlmostEqual(svd_nll/init_nll, 1., places=2)
     logging.info(msg=f'Reg on init params = {init_reg}')
     logging.info(msg=f'NLL on init params = {init_nll}')
 
@@ -304,6 +314,8 @@ class ObjectivesTest(parameterized.TestCase):
 
     inferred_reg = reg(inferred_params, warp_func)
     inferred_nll = nll_func(inferred_params, warp_func)
+    svd_nll = nll_func(inferred_params, warp_func, use_cholesky=False)
+    self.assertAlmostEqual(svd_nll/inferred_nll, 1., places=2)
     logging.info(
         msg=f'Reg on inferred params = {inferred_reg} (Before: {init_reg})')
     logging.info(
