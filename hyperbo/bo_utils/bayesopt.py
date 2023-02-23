@@ -302,7 +302,7 @@ def _onehot_matrix(shape, idx) -> np.ndarray:
 def _subdataset_to_arrays(ds: SubDataset, dataset_id: int,
                           num_datasets: int) -> Tuple[np.ndarray, np.ndarray]:
   onehot = _onehot_matrix((ds.y.shape[0], num_datasets), dataset_id)
-  return np.concatenate([ds.x, onehot], axis=1), ds.y
+  return np.concatenate([ds.x, onehot], axis=1), ds.y  # pytype: disable=bad-return-type  # jax-ndarray
 
 
 @dataclasses.dataclass
