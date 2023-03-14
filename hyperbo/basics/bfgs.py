@@ -16,12 +16,13 @@
 """A wrapper for a Jax BFGS optimizer."""
 import logging
 from typing import Any, Dict, Tuple
+import jax
 from jax import flatten_util
 import jax.scipy.optimize as jspopt
 
 
 def bfgs(fun, x0: Dict[str, Any], tol: float,
-         max_training_step: int) -> Tuple[Dict[str, Any], float]:
+         max_training_step: int) -> Tuple[Dict[str, Any], jax.Array]:
   """Minimization of scalar function of a pytree input.
 
   Args:
