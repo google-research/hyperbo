@@ -264,6 +264,9 @@ def run_bayesopt(
     # Infer GP parameters.
     key, subkey = jax.random.split(key)
     model.train(subkey, get_params_path, callback=callback)
+  else:
+    key, subkey = jax.random.split(key)
+    model.rng = subkey
   if isinstance(queried_sub_dataset, SubDataset):
     best_query = get_best_datapoint(queried_sub_dataset)
     sub_dataset = simulated_bayesopt(

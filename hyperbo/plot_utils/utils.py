@@ -202,6 +202,7 @@ def plot_summary(labels,
            method=method,
            colors=colors,
            **kwargs)
+  fig.tight_layout()
   if uppercenter_legend:
     axes[0].legend(
         loc='upper center',
@@ -219,7 +220,7 @@ def plot_summary(labels,
     axes[0].set_title(title)
 
   if not violin_trials or not violin_labels:
-    return
+    return fig
   labels = violin_labels
   for i, trial in enumerate(violin_trials):
     data = []

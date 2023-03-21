@@ -39,6 +39,8 @@ ACFUN = {
     'probability_of_improvement': acfun.probability_of_improvement,
     'ucb3': acfun.ucb3,
     'random_search': acfun.random_search,
+    'ucb2': acfun.ucb2,
+    'ucb': acfun.ucb,
 }
 
 ACFUN_SUB = {

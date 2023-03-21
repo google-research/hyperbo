@@ -21,7 +21,6 @@ from hyperbo.gp_utils import gp
 import jax.numpy as jnp
 import jax.random as jrd
 import jax.scipy as jsp
-import numpy as np
 
 partial = functools.partial
 
@@ -53,8 +52,8 @@ def acfun_wrapper(acfun_sub: Callable[[jnp.array, jnp.array, Any], jnp.array],
       model: gp.GP,
       sub_dataset_key: Union[int, str],
       x_queries: jnp.array,
-      acfun_callback: Callable[[gp.GP, Union[int, str]],
-                               Any] = acfun_callback_default):
+      acfun_callback: Callable[..., Any] = acfun_callback_default,
+  ):
     """Acquisition function.
 
     Args:
@@ -67,7 +66,7 @@ def acfun_wrapper(acfun_sub: Callable[[jnp.array, jnp.array, Any], jnp.array],
         as beta for ucb_sub given model.
 
     Returns:
-      Evaluations of acfun_sub on x_queries.
+      n' x 1 dimensional evaluations of acfun_sub on x_queries.
     """
     if isinstance(model, gp.HGP):
       predicts = model.predict(
@@ -78,8 +77,8 @@ def acfun_wrapper(acfun_sub: Callable[[jnp.array, jnp.array, Any], jnp.array],
       acfun_param = acfun_callback(model, sub_dataset_key)
       ac_vals = []
       for mu, var in predicts:
-        ac_vals.append(acfun_sub(mu, var, acfun_param))
-      ac_val = np.mean(ac_vals, axis=0)
+        ac_vals.append(acfun_sub(mu, jnp.sqrt(var), acfun_param))
+      ac_val = jnp.mean(ac_vals, axis=0)
     else:
       mu, var = model.predict(
           x_queries,
@@ -87,7 +86,7 @@ def acfun_wrapper(acfun_sub: Callable[[jnp.array, jnp.array, Any], jnp.array],
           full_cov=False,
           with_noise=True)
       acfun_param = acfun_callback(model, sub_dataset_key)
-      ac_val = acfun_sub(mu, var, acfun_param)
+      ac_val = acfun_sub(mu, jnp.sqrt(var), acfun_param)
     return ac_val
 
   return acquisition_function
@@ -142,22 +141,23 @@ def ucb_sub(mu, std, beta=3.):
   return mu + beta * std
 
 
-def ei_callback_default(model, key):
+def ei_callback_default(model, key, **unused_kwargs):
   if key not in model.dataset or model.dataset[key].y.shape[0] == 0:
-    return 0.
+    return 0.0
   return jnp.max(model.dataset[key].y)
 
 
 expected_improvement = acfun_wrapper(
     acfun_sub=expected_improvement_sub,
-    acfun_callback_default=ei_callback_default)
+    acfun_callback_default=ei_callback_default,
+)
 
 ei = expected_improvement
 
 
-def pi_callback_default(model, key, zeta=0.1, use_std=False):
+def pi_callback_default(model, key, zeta=0.1, use_std=False, **unused_kwargs):
   if key not in model.dataset or model.dataset[key].y.shape[0] == 0:
-    return 0.
+    return 0.0
   if use_std:
     return jnp.max(model.dataset[key].y) + zeta * jnp.std(model.dataset[key].y)
   else:
