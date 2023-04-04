@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2022 HyperBO Authors.
+# Copyright 2023 HyperBO Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -210,6 +210,7 @@ def neg_log_marginal_likelihood(mean_func,
 
 nll = neg_log_marginal_likelihood
 kl = multivariate_normal_divergence
+ekl = kl
 euc = multivariate_normal_euc_distance
 regkl = kl
 regeuc = euc

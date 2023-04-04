@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2022 HyperBO Authors.
+# Copyright 2023 HyperBO Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -344,7 +344,7 @@ class GP:
     """Initialize params with a JAX random state."""
     if not self.dataset:
       raise ValueError('Cannot initialize GPParams without dataset.')
-    logging.info(msg=f'dataset: {jax.tree_map(jnp.shape, self.dataset)}')
+    data_utils.log_dataset(self.dataset)
 
     if isinstance(self.params.config['objective'], str):
       self.params.config['objective'] = getattr(obj,
@@ -384,6 +384,8 @@ class GP:
     if check_param('lengthscale', jnp.ndarray):
       flag = 'Retained'
     elif check_param('lengthscale', float):
+      if 'mlp' not in self.cov_func.__name__:
+        last_layer_size = self.input_dim
       uni_lengthscale = self.params.model['lengthscale']
       self.params.model['lengthscale'] = jnp.ones(
           last_layer_size) * uni_lengthscale
@@ -506,7 +508,7 @@ class GP:
             utils.kl_multivariate_normal, partial=False, eps=1e-6))
     euc = self.empirical_divergence(
         distance=utils.euclidean_multivariate_normal)
-    msg = f'nll = {nll}, ekl = {ekl}, euc reg = {euc}'
+    msg = f'nll = {nll}, ekl = {ekl}, euc = {euc}'
     if verbose:
       print(msg)
     logging.info(msg=msg)

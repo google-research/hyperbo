@@ -17,7 +17,7 @@ pip install --upgrade pip
 pip install "git+https://github.com/google-research/hyperbo.git#egg=hyperbo"
 ```
 
-## PD1 benchmark
+## Dataset
 To download the dataset, please copy and paste the following link to your browser's address bar.
 ```
 http://storage.googleapis.com/gresearch/pint/pd1.tar.gz

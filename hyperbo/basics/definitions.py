@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2022 HyperBO Authors.
+# Copyright 2023 HyperBO Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -38,15 +38,18 @@ class SubDataset(NamedTuple):
 @dataclasses.dataclass
 class GPParams:
   """Parameters in a GP."""
+
   config: Dict[str, Any] = dataclasses.field(default_factory=lambda: {})
   model: Dict[str, Any] = dataclasses.field(default_factory=lambda: {})
-  cache: Dict[Union[int, str],
-              GPCache] = dataclasses.field(default_factory=lambda: {})
+  cache: Dict[Union[int, str], GPCache] = dataclasses.field(
+      default_factory=lambda: {}
+  )
   samples: List[Dict[str, Any]] = dataclasses.field(default_factory=lambda: [])
 
 
-AllowedDatasetTypes = Union[List[Union[Tuple[jnp.ndarray, ...], SubDataset]],
-                            Dict[Union[str], Union[Tuple[jnp.ndarray, ...],
-                                                   SubDataset]]]
+AllowedDatasetTypes = Union[
+    List[Union[Tuple[jnp.ndarray, ...], SubDataset]],
+    Dict[Union[str, int], Union[Tuple[jnp.ndarray, ...], SubDataset]],
+]
 
 WarpFuncType = Optional[Dict[str, Callable[[Any], Any]]]

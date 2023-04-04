@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2022 HyperBO Authors.
+# Copyright 2023 HyperBO Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -32,8 +32,8 @@ def log_dataset(dataset):
   def safe(f):
 
     def safef(x):
-      if isinstance(x, (str, int, float, bool)):
-        return str
+      if not isinstance(x, jnp.ndarray):
+        return x
       elif x.shape[0] == 0:
         return jnp.nan
       else:
@@ -42,15 +42,31 @@ def log_dataset(dataset):
     return safef
 
   logging.info(msg=f'dataset len = {len(dataset)}.')
-  logging.info(msg='dataset shape: ' f'{jax.tree_map(jnp.shape, dataset)}')
-  logging.info(msg='dataset mean: '
-               f'{jax.tree_map(safe(partial(jnp.mean, axis=0)), dataset)}')
-  logging.info(msg='dataset median: '
-               f'{jax.tree_map(safe(partial(jnp.median, axis=0)), dataset)}')
-  logging.info(msg='dataset min: '
-               f'{jax.tree_map(safe(partial(jnp.min, axis=0)), dataset)}')
-  logging.info(msg='dataset max: '
-               f'{jax.tree_map(safe(partial(jnp.max, axis=0)), dataset)}')
+  logging.info(msg=f'dataset shape: {jax.tree_map(safe(jnp.shape), dataset)}')
+  logging.info(
+      msg=(
+          'dataset mean: '
+          f'{jax.tree_map(safe(partial(jnp.mean, axis=0)), dataset)}'
+      )
+  )
+  logging.info(
+      msg=(
+          'dataset median: '
+          f'{jax.tree_map(safe(partial(jnp.median, axis=0)), dataset)}'
+      )
+  )
+  logging.info(
+      msg=(
+          'dataset min: '
+          f'{jax.tree_map(safe(partial(jnp.min, axis=0)), dataset)}'
+      )
+  )
+  logging.info(
+      msg=(
+          'dataset max: '
+          f'{jax.tree_map(safe(partial(jnp.max, axis=0)), dataset)}'
+      )
+  )
 
 
 def sub_sample_dataset_iterator(key, dataset, batch_size):
