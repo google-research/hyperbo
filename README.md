@@ -1,13 +1,17 @@
 # HyperBO - Prior Discovery
-A Jax/Flax codebase for prior discovery in meta Bayesian optimization.
-The algorithm and analyses can be found in *[Pre-trained Gaussian processes for Bayesian optimization](https://arxiv.org/pdf/2109.08215.pdf)*. Slides are available [at this link](https://ziw.mit.edu/pub/hyperbo_slides.pdf) with [video at the AutoML Seminars](https://www.youtube.com/watch?v=cH4-hHXvO5c). 
+A Jax/Flax codebase for the algorithm in HyperBO described in *[Pre-trained Gaussian processes for Bayesian optimization](https://arxiv.org/abs/2109.08215)*.
 
-Also see [GPax](https://github.com/google-research/gpax) for a more modular implementation of Gaussian processes used by HyperBO based on [Tensorflow Probability](https://www.tensorflow.org/probability) with Jax backend.
+**[Research paper](https://arxiv.org/pdf/2109.08215.pdf)** | **[Colab Notebook](https://colab.research.google.com/github/google-research/hyperbo/blob/main/hyperbo/hyperbo_demo.ipynb)** | **[PD1 benchmark](https://github.com/google-research/hyperbo/blob/main/README.md#pd1-benchmark)**
 
 Disclaimer: This is not an officially supported Google product.
 
+## Tutorial
+Follow [HyperBO's Colab Notebook](https://colab.research.google.com/github/google-research/hyperbo/blob/main/hyperbo/hyperbo_demo.ipynb) or [Jupyter Notebook](https://github.com/google-research/hyperbo/blob/main/hyperbo/hyperbo_demo.ipynb).
+
+Also see tests for a more comprehensive understanding of the usage.
+
 ## Installation
-We recommend using Python 3.7 for stability.
+We recommend using Python 3.7 or 3.9 for stability.
 
 To install the latest development version inside a virtual environment, run
 ```
@@ -17,8 +21,8 @@ pip install --upgrade pip
 pip install "git+https://github.com/google-research/hyperbo.git#egg=hyperbo"
 ```
 
-## Dataset
-To download the dataset, please copy and paste the following link to your browser's address bar.
+## PD1 benchmark
+PD1 is a new hyperparameter tuning benchmark for optimizing deep learning models. To download the PD1 dataset, please copy and paste the following link to your browser's address bar.
 ```
 http://storage.googleapis.com/gresearch/pint/pd1.tar.gz
 ```
@@ -35,15 +39,23 @@ etc. They will hold arrays aligned with the global_step column that indicates wh
 See the "best_\*" columns for the best measurement achieved over training.
 
 
-## Usage
-See tests.
+## GPax
+[GPax](https://github.com/google-research/gpax) is a modular implementation of Gaussian processes used by HyperBO based on [Tensorflow Probability](https://www.tensorflow.org/probability) with Jax backend.
 
-## Citing
+## Citation
+Please cite our work if you would like to use the code.
 ```
-@article{wang2021hyperbo,
-  title={Pre-trained Gaussian processes for Bayesian optimization},
-  author={Wang, Zi and Dahl, George E and Swersky, Kevin and Lee, Chansoo and Mariet, Zelda and Nado, Zachary and Gilmer, Justin and Snoek, Jasper and Ghahramani, Zoubin},
+@article{wang2023hyperbo,
+  title={{Pre-trained Gaussian processes for Bayesian optimization}},
+  author={Zi Wang and
+          George E. Dahl and
+          Kevin Swersky and
+          Chansoo Lee and
+          Zachary Nado and
+          Justin Gilmer and
+          Jasper Snoek and
+          Zoubin Ghahramani},
   journal={arXiv preprint arXiv:2109.08215},
-  year={2022}
+  year={2023}
 }
 ```
