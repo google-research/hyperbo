@@ -365,6 +365,7 @@ def pd1(key,
         data_files=None):
   """Load PD1(Nesterov) from init2winit and pick a random study as test function.
 
+  This function loads the PD1 dataset and reorganize it for experiments.
   For matched dataframes, we set `aligned` to True in its trials and reflect it
   in its corresponding SubDataset.
   The `aligned` value and sub-dataset key has suffix aligned_suffix, which is
@@ -372,21 +373,29 @@ def pd1(key,
 
   Args:
     key: random state for jax.random.
-    p_observed: percentage of data that is observed.
+    p_observed: percentage of test sub-dataset that is observed and included in
+      the training dataset.
     verbose: print info about data if True.
-    sub_dataset_key: sub_dataset name to be queried.
-    input_warp: apply warping to data if True.
-    output_log_warp: use log warping for output.
-    num_remove: number of sub-datasets to remove.
-    metric_name: name of metric.
-    p_remove: proportion of data to be removed.
+    sub_dataset_key: sub-dataset name to be queried; if it is None, a random
+      sub-dataset is selected as the sub-dataset to be queried.
+    input_warp: apply input warping to data if True.
+    output_log_warp: use log warping for output if True.
+    num_remove: number of sub-datasets to be removed in the training dataset.
+      This parameter should be used for holding out training tasks.
+    metric_name: name of metric; default is 'best_valid/error_rate'.
+    p_remove: proportion of data to be removed in each training sub-dataset.
     data_files: a dict mapping data descriptions to files. See PD1 for an
       example.
 
   Returns:
-    dataset: Dict[str, SubDataset], mapping from study group to a SubDataset.
-    sub_dataset_key: study group key for testing in dataset.
-    queried_sub_dataset: SubDataset to be queried.
+    dataset: training dataset that can be used to pre-train a Gaussian process,
+      in the format of Dict[str, SubDataset], mapping from study group to a
+      SubDataset.
+    sub_dataset_key: study group (sub-dataset) key for testing, which can be a
+      key in dataset if data from this test sub-dataset is used for model
+      training.
+    queried_sub_dataset: SubDataset to be queried; also known as test
+      sub-dataset.
   """
   if data_files is None:
     data_files = PD1.copy()
@@ -583,20 +592,25 @@ def hpob_dataset(search_space,
 
   Args:
     search_space: string of the search space.
-    test_dataset_id: string of the test dataset.
+    test_dataset_id: string of the test sub-dataset.
     test_seed: Identifier of the seed for the evaluation. Options: test0, test1,
       test2, test3, test4.
     output_log_warp: log warp on output with max assumed to be 1.
     test_only: Loads only the meta-test split from HPO-B-v3.
-    n_remain: number of trainnig datapoints per training task.
-      Keep all datapoints if n_remain <= 0.
+    n_remain: number of trainnig datapoints per training task. Keep all
+      datapoints if n_remain <= 0.
     remain_random_key: Jax PRNGKey.
     normalize_y: normalize all y values for each subdataset if True.
 
   Returns:
-    dataset: Dict[str, SubDataset], mapping from study group to a SubDataset.
-    sub_dataset_key: study group key for testing in dataset.
-    queried_sub_dataset: SubDataset to be queried.
+    dataset: training dataset that can be used to pre-train a Gaussian process,
+      in the format of Dict[str, SubDataset], mapping from name of sub-dataset
+      to a SubDataset.
+    sub_dataset_key: sub-dataset key for testing, which can be a
+      key in dataset if data from this test sub-dataset is used for model
+      training.
+    queried_sub_dataset: SubDataset to be queried; also known as test
+      sub-dataset.
   """
   # pylint: disable=g-bad-import-order,g-import-not-at-top
   from hpob import hpob_handler

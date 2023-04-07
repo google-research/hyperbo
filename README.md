@@ -1,7 +1,7 @@
 # HyperBO - Prior Discovery
 A Jax/Flax codebase for the algorithm in HyperBO described in *[Pre-trained Gaussian processes for Bayesian optimization](https://arxiv.org/abs/2109.08215)*.
 
-**[Research paper](https://arxiv.org/pdf/2109.08215.pdf)** | **[Colab Notebook](https://colab.research.google.com/github/google-research/hyperbo/blob/main/hyperbo/hyperbo_demo.ipynb)** | **[PD1 benchmark](https://github.com/google-research/hyperbo/blob/main/README.md#pd1-benchmark)**
+**[Research paper](https://arxiv.org/pdf/2109.08215.pdf)** | **[Blog post](https://ai.googleblog.com/2023/04/pre-trained-gaussian-processes-for.html)** | **[Colab Notebook](https://colab.research.google.com/github/google-research/hyperbo/blob/main/hyperbo/hyperbo_demo.ipynb)** | **[PD1 benchmark](https://github.com/google-research/hyperbo#pd1-benchmark)**
 
 Disclaimer: This is not an officially supported Google product.
 
