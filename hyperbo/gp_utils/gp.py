@@ -635,7 +635,7 @@ class HGP(GP):
     logging.info(msg=msg)
     return nll, ekl, euc, all_key2nll
 
-  def predict(self,
+  def predict(self,  # pytype: disable=signature-mismatch  # overriding-parameter-count-checks
               queried_inputs: jnp.ndarray,
               sub_dataset_key: Union[int, str] = 0,
               full_cov: bool = False,
