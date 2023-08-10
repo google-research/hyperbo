@@ -23,8 +23,8 @@ import jax.numpy as jnp
 @dataclasses.dataclass
 class GPCache:
   """Caching intermediate results for GP."""
-  chol: jnp.array
-  kinvy: jnp.array
+  chol: jnp.ndarray
+  kinvy: jnp.ndarray
   needs_update: bool
 
 

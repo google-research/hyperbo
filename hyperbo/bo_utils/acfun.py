@@ -33,9 +33,10 @@ def random_search(model, x_queries, **unused_kwargs):
   return jrd.uniform(subkey, (x_queries.shape[0], 1))
 
 
-def acfun_wrapper(acfun_sub: Callable[[jnp.array, jnp.array, Any], jnp.array],
-                  acfun_callback_default: Callable[[gp.GP, Union[int, str]],
-                                                   Any]):
+def acfun_wrapper(
+    acfun_sub: Callable[[jnp.ndarray, jnp.ndarray, Any], jnp.ndarray],
+    acfun_callback_default: Callable[[gp.GP, Union[int, str]], Any],
+):
   """Wrapper for sub acquisition function.
 
   Args:
@@ -51,7 +52,7 @@ def acfun_wrapper(acfun_sub: Callable[[jnp.array, jnp.array, Any], jnp.array],
       *,
       model: gp.GP,
       sub_dataset_key: Union[int, str],
-      x_queries: jnp.array,
+      x_queries: jnp.ndarray,
       acfun_callback: Callable[..., Any] = acfun_callback_default,
   ):
     """Acquisition function.
