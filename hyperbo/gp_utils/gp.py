@@ -322,12 +322,14 @@ class GP:
   """
   dataset: Dict[Union[int, str], SubDataset]
 
-  def __init__(self,
-               dataset: defs.AllowedDatasetTypes,
-               mean_func: Callable[..., jnp.array],
-               cov_func: Callable[..., jnp.array],
-               params: GPParams,
-               warp_func: defs.WarpFuncType = None):
+  def __init__(
+      self,
+      dataset: defs.AllowedDatasetTypes,
+      mean_func: Callable[..., jnp.ndarray],
+      cov_func: Callable[..., jnp.ndarray],
+      params: GPParams,
+      warp_func: defs.WarpFuncType = None,
+  ):
     self.mean_func = mean_func
     self.cov_func = cov_func
     if params is not None:
@@ -541,12 +543,14 @@ class GP:
     self.params.cache[sub_dataset_key] = GPCache(
         chol=chol, kinvy=kinvy, needs_update=False)
 
-  def predict(self,
-              queried_inputs: jnp.ndarray,
-              sub_dataset_key: Union[int, str] = 0,
-              full_cov: bool = False,
-              with_noise: bool = True,
-              unbiased: bool = True) -> Tuple[jnp.array, jnp.array]:
+  def predict(
+      self,
+      queried_inputs: jnp.ndarray,
+      sub_dataset_key: Union[int, str] = 0,
+      full_cov: bool = False,
+      with_noise: bool = True,
+      unbiased: bool = True,
+  ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """Predict the distribution of evaluations on queried_inputs.
 
     Args:
@@ -635,11 +639,13 @@ class HGP(GP):
     logging.info(msg=msg)
     return nll, ekl, euc, all_key2nll
 
-  def predict(self,  # pytype: disable=signature-mismatch  # overriding-parameter-count-checks
-              queried_inputs: jnp.ndarray,
-              sub_dataset_key: Union[int, str] = 0,
-              full_cov: bool = False,
-              with_noise: bool = True) -> List[Tuple[jnp.array, jnp.array]]:
+  def predict(
+      self,  # pytype: disable=signature-mismatch  # overriding-parameter-count-checks
+      queried_inputs: jnp.ndarray,
+      sub_dataset_key: Union[int, str] = 0,
+      full_cov: bool = False,
+      with_noise: bool = True,
+  ) -> List[Tuple[jnp.ndarray, jnp.ndarray]]:
     """Predict the distribution of evaluations on queried_inputs."""
     samples = self.get_model_params_samples()
     results = []
