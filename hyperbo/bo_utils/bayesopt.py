@@ -72,10 +72,15 @@ def retrain_model(model: gp.GP,
       random_key, get_params_path=get_params_path, callback=callback)
 
 
-def bayesopt(key: Any, model: gp.GP, sub_dataset_key: Union[int, str],
-             query_oracle: Callable[[Any], Any], ac_func: Callable[...,
-                                                                   jnp.array],
-             iters: int, input_sampler: Callable[..., jnp.array]) -> SubDataset:
+def bayesopt(
+    key: Any,
+    model: gp.GP,
+    sub_dataset_key: Union[int, str],
+    query_oracle: Callable[[Any], Any],
+    ac_func: Callable[..., jnp.ndarray],
+    iters: int,
+    input_sampler: Callable[..., jnp.ndarray],
+) -> SubDataset:
   """Running simulated bayesopt on a set of pre-evaluated inputs x_queries.
 
   Args:
@@ -133,11 +138,12 @@ def simulated_bayesopt(
     model: gp.GP,
     sub_dataset_key: Union[int, str],
     queried_sub_dataset: SubDataset,
-    ac_func: Callable[..., jnp.array],
+    ac_func: Callable[..., jnp.ndarray],
     iters: int,
     random_key: Optional[jax.random.PRNGKeyArray] = None,
     get_params_path: Optional[Callable[[Any], Any]] = None,
-    callback: Optional[Callable[[Any], Any]] = None) -> SubDataset:
+    callback: Optional[Callable[[Any], Any]] = None,
+) -> SubDataset:
   """Running simulated bayesopt on a set of pre-evaluated inputs x_queries.
 
   Args:
@@ -191,10 +197,10 @@ def run_bayesopt(
     dataset: defs.AllowedDatasetTypes,
     sub_dataset_key: str,
     queried_sub_dataset: Union[SubDataset, Callable[[Any], Any]],
-    mean_func: Callable[..., jnp.array],
-    cov_func: Callable[..., jnp.array],
+    mean_func: Callable[..., jnp.ndarray],
+    cov_func: Callable[..., jnp.ndarray],
     init_params: defs.GPParams,
-    ac_func: Callable[..., jnp.array],
+    ac_func: Callable[..., jnp.ndarray],
     iters: int,
     warp_func: defs.WarpFuncType = None,
     init_random_key: Optional[jax.random.PRNGKeyArray] = None,
@@ -203,7 +209,8 @@ def run_bayesopt(
     data_loader_name: str = '',
     get_params_path: Optional[Callable[[Any], Any]] = None,
     callback: Optional[Callable[[Any, Any, Any], Any]] = None,
-    save_retrain_model: bool = False):
+    save_retrain_model: bool = False,
+):
   """Running bayesopt experiment with synthetic data.
 
   Args:
