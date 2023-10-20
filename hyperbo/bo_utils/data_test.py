@@ -17,7 +17,7 @@
 
 Use the following to debug nan.
 
-from jax.config import config
+from jax import config
 config.update('jax_debug_nans', True)
 """
 import logging
