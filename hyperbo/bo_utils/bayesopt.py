@@ -45,7 +45,7 @@ def get_best_datapoint(sub_dataset):
 
 def retrain_model(model: gp.GP,
                   sub_dataset_key: Union[int, str],
-                  random_key: Optional[jax.random.PRNGKeyArray] = None,
+                  random_key: Optional[jax.Array] = None,
                   get_params_path: Optional[Callable[[Any], Any]] = None,
                   callback: Optional[Callable[[Any], Any]] = None):
   """Retrain the model with more observations on sub_dataset.
@@ -140,7 +140,7 @@ def simulated_bayesopt(
     queried_sub_dataset: SubDataset,
     ac_func: Callable[..., jnp.ndarray],
     iters: int,
-    random_key: Optional[jax.random.PRNGKeyArray] = None,
+    random_key: Optional[jax.Array] = None,
     get_params_path: Optional[Callable[[Any], Any]] = None,
     callback: Optional[Callable[[Any], Any]] = None,
 ) -> SubDataset:
@@ -203,7 +203,7 @@ def run_bayesopt(
     ac_func: Callable[..., jnp.ndarray],
     iters: int,
     warp_func: defs.WarpFuncType = None,
-    init_random_key: Optional[jax.random.PRNGKeyArray] = None,
+    init_random_key: Optional[jax.Array] = None,
     method: str = 'hyperbo',
     init_model: bool = False,
     data_loader_name: str = '',
