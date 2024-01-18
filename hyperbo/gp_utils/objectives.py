@@ -26,12 +26,14 @@ import jax.scipy.linalg as jspla
 retrieve_params = params_utils.retrieve_params
 
 
-def multivariate_normal_divergence(mean_func,
-                                   cov_func,
-                                   params,
-                                   dataset,
-                                   warp_func=None,
-                                   distance=utils.kl_multivariate_normal):
+def multivariate_normal_divergence(
+    mean_func,
+    cov_func,
+    params,
+    dataset,
+    warp_func=None,
+    distance=utils.kl_multivariate_normal,
+):
   """Compute the multivariate normal divergence between the data and the model.
 
   The returned objective describes the distance between the multivariate normal

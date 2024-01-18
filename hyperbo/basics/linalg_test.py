@@ -29,7 +29,7 @@ grad = jax.grad
 
 def test_grad(fun, params, index, eps=1e-4, cached_cholesky=False):
   key = random.PRNGKey(0)
-  key, subkey = random.split(key)
+  _, subkey = random.split(key)
   vec = random.normal(subkey, params[index].shape)
   if index == 0:
     vec = 0.5 * jnp.dot(vec.T, vec)

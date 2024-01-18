@@ -124,10 +124,11 @@ def infer_parameters(mean_func,
     optimizer = optax.adam(params.config['learning_rate'])
     opt_state = optimizer.init(params.model)
 
-    key, subkey = jax.random.split(key, 2)
+    _, subkey = jax.random.split(key, 2)
     dataset_iter = data_utils.sub_sample_dataset_iterator(
         subkey, dataset, batch_size)
     model_param = params.model
+    batch = None
     for i in range(max_training_step):
       batch = next(dataset_iter)
       current_loss, grads = jax.value_and_grad(loss_func)(model_param, batch)
@@ -143,15 +144,17 @@ def infer_parameters(mean_func,
       model_param = optax.apply_updates(model_param, updates)
       if callback:
         callback(i, params.model, current_loss)
-    current_loss = loss_func(model_param, batch)
-    if jnp.isfinite(current_loss):
-      params.model = model_param
-    params_utils.log_params_loss(
-        step=max_training_step,
-        params=params,
-        loss=current_loss,
-        warp_func=warp_func,
-        params_save_file=get_params_path())
+    if batch is not None:
+      current_loss = loss_func(model_param, batch)
+      if jnp.isfinite(current_loss):
+        params.model = model_param
+      params_utils.log_params_loss(
+          step=max_training_step,
+          params=params,
+          loss=current_loss,
+          warp_func=warp_func,
+          params_save_file=get_params_path(),
+      )
   else:
     @jit
     def loss_func(model_params):
@@ -385,6 +388,10 @@ class GP:
 
     if check_param('lengthscale', jnp.ndarray):
       flag = 'Retained'
+      lengthscale = self.params.model['lengthscale']
+      logging.info(
+          msg=f'{flag} lengthscale: {jax.tree_map(jnp.shape, lengthscale)}'
+      )
     elif check_param('lengthscale', float):
       if 'mlp' not in self.cov_func.__name__:
         last_layer_size = self.input_dim
@@ -463,7 +470,7 @@ class GP:
       key, subkey = jax.random.split(self.rng, 2)
       self.rng = key
     else:
-      key, subkey = jax.random.split(key, 2)
+      _, subkey = jax.random.split(key, 2)
     self.params = infer_parameters(
         mean_func=self.mean_func,
         cov_func=self.cov_func,
@@ -489,8 +496,9 @@ class GP:
         return_key2nll=True,
         use_cholesky=False)
 
-  def empirical_divergence(self,
-                           distance=utils.kl_multivariate_normal) -> float:
+  def empirical_divergence(
+      self, distance=utils.kl_multivariate_normal
+  ) -> float:
     """Compute empirical divergence from sample mean and sample covariance."""
     return obj.multivariate_normal_divergence(
         mean_func=self.mean_func,
@@ -507,7 +515,9 @@ class GP:
     nll, key2nll = self.neg_log_marginal_likelihood()
     ekl = self.empirical_divergence(
         distance=functools.partial(
-            utils.kl_multivariate_normal, partial=False, eps=1e-6))
+            utils.kl_multivariate_normal, eps=1e-6
+        )
+    )
     euc = self.empirical_divergence(
         distance=utils.euclidean_multivariate_normal)
     msg = f'nll = {nll}, ekl = {ekl}, euc = {euc}'
@@ -623,6 +633,7 @@ class HGP(GP):
 
     all_stats = []
     all_key2nll = collections.defaultdict(float)
+    key2nll = []
     for model_params in samples:
       self.update_model_params(model_params)
       nll, ekl, euc, key2nll = super().stats()

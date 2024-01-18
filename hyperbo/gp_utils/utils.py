@@ -15,15 +15,10 @@
 
 """Common utils for gp_utils."""
 
-import logging
-
 from hyperbo.basics import definitions as defs
 from hyperbo.basics import linalg
 import jax
 import jax.numpy as jnp
-import jax.scipy.linalg as jspla
-
-# import jax._src.dtypes as dtypes
 
 SubDataset = defs.SubDataset
 
@@ -86,30 +81,35 @@ DEFAULT_WARP_FUNC = {
 }
 
 
-def svd_matrix_sqrt(cov):
-  """Compute the square root of a symmetric matrix via SVD.
+def partial_kl_mvn(mu0, cov0, mu1, cov1):
+  """Compute the partial KL divergence between two MVN distributions.
 
   Args:
-    cov: a symmetric matrix.
+    mu0: mean for the first multivariate normal distribution.
+    cov0: covariance matrix for the first multivariate normal distribution.
+    mu1: mean for the second multivariate normal distribution.
+    cov1: covariance matrix for the second multivariate normal distribution.
+      cov1 must be invertible.
 
   Returns:
-    The decomposed factor A such that A * A.T = cov and A is full column rank.
+    The KL divergence that does not include terms that are not
+    affected by potential model parameters in mu1 or cov1.
   """
-  (u, s, _) = jspla.svd(cov)
-  factor = u * jnp.sqrt(s[..., None, :])
-  tol = s.max() * jnp.finfo(s.dtype).eps / 2. * jnp.sqrt(2*cov.shape[0] + 1.)
-  rank = jnp.count_nonzero(s > tol)
-  return factor[:, :rank]
+  mu_diff = mu1 - mu0
+  chol1, cov1invmudiff = linalg.solve_linear_system(cov1, mu_diff)
+  # pylint: disable=g-long-lambda
+  func = lambda x: linalg.inverse_spdmatrix_vector_product(
+      cov1, x, cached_cholesky=chol1)
+  trcov1invcov0 = jnp.trace(vmap(func)(cov0))
+  mahalanobis = jnp.dot(mu_diff, cov1invmudiff)
+  logdetcov1 = jnp.sum(2 * jnp.log(jnp.diag(chol1)))
+  return trcov1invcov0 + mahalanobis + logdetcov1
 
 
-def kl_multivariate_normal(mu0,
-                           cov0,
-                           mu1,
-                           cov1,
-                           weight=1.,
-                           partial=True,
-                           eps=0.):
-  """Computes KL divergence between two multivariate normal distributions.
+def kl_multivariate_normal(
+    mu0, cov0, mu1, cov1, weight=1.0, eps=0.0, partial=True
+):
+  """Compute the KL divergence between two MVN distributions.
 
   Args:
     mu0: mean for the first multivariate normal distribution.
@@ -118,13 +118,13 @@ def kl_multivariate_normal(mu0,
     cov1: covariance matrix for the second multivariate normal distribution.
       cov1 must be invertible.
     weight: weight for the returned KL divergence.
-    partial: only compute terms in KL involving mu1 and cov1 if True.
     eps: (optional) small positive value added to the diagonal terms of cov0 and
       cov1 to make them well behaved.
+    partial: only compute terms in KL involving mu1 and cov1 if True.
 
   Returns:
     KL divergence. The returned value does not include terms that are not
-    affected by potential model parameters in mu1 or cov1.
+    affected by potential model parameters in mu1 or cov1 if partial is True.
   """
   if not cov0.shape:
     cov0 = cov0[jnp.newaxis, jnp.newaxis]
@@ -135,51 +135,16 @@ def kl_multivariate_normal(mu0,
     cov0 = cov0 + jnp.eye(cov0.shape[0]) * eps
     cov1 = cov1 + jnp.eye(cov1.shape[0]) * eps
 
-  mu_diff = mu1 - mu0
-  chol1, cov1invmudiff = linalg.solve_linear_system(cov1, mu_diff)
-  # pylint: disable=g-long-lambda
-  func = lambda x: linalg.inverse_spdmatrix_vector_product(
-      cov1, x, cached_cholesky=chol1)
-  trcov1invcov0 = jnp.trace(vmap(func)(cov0))
-  mahalanobis = jnp.dot(mu_diff, cov1invmudiff)
-  common_terms = trcov1invcov0 + mahalanobis
   if partial:
-    logdetcov1 = jnp.sum(2 * jnp.log(jnp.diag(chol1)))
-    # Approximate the det term of EKL with log det of cov1.
-    ekl = common_terms + logdetcov1
+    return weight * partial_kl_mvn(mu0, cov0, mu1, cov1)
+  else:
+    chol0 = linalg.svd_matrix_sqrt(cov0)
+    chol0inv = jnp.linalg.pinv(chol0)
+    mu1 = jnp.dot(chol0inv, mu1 - mu0)
+    cov1 = jnp.dot(jnp.dot(chol0inv, cov1), chol0inv.T)
+    mu0 = jnp.zeros_like(mu1)
+    cov0 = jnp.eye(cov1.shape[0])
+    ekl = 0.5 * (partial_kl_mvn(mu0, cov0, mu1, cov1) - chol0.shape[1])
     return weight * ekl
-  # Compute the full EKL
-  chol0 = svd_matrix_sqrt(cov0)
-  sign, logdetcov0 = jnp.linalg.slogdet(jnp.dot(chol0.T, chol0))
-  logging.info(msg=f'sign, logdetcov0 = {sign}, {logdetcov0}')
-  assert sign == 1., 'Pseudo determinant of cov0 is 0 or negative.'
-  sign, logdetcov1 = jnp.linalg.slogdet(jnp.dot(chol0.T, jnp.dot(cov1, chol0)))
-  logging.info(msg=f'sign, logdetcov1 = {sign}, {logdetcov1}')
-  assert sign == 1., 'Determinant of cov1 is 0 or negative.'
-  ekl = 0.5 * (common_terms + logdetcov1- 2*logdetcov0 - chol0.shape[1])
-  return weight * ekl
 
 
-def euclidean_multivariate_normal(mu0,
-                                  cov0,
-                                  mu1,
-                                  cov1,
-                                  mean_weight=1.,
-                                  cov_weight=1.,
-                                  **unused_kwargs):
-  """Computes Euclidean distance between two multivariate normal distributions.
-
-  Args:
-    mu0: mean for the first multivariate normal distribution.
-    cov0: covariance matrix for the first multivariate normal distribution.
-    mu1: mean for the second multivariate normal distribution.
-    cov1: covariance matrix for the second multivariate normal distribution.
-    mean_weight: weight for euclidean distance on the mean vectors.
-    cov_weight: weight for euclidean distance on the covariance matrices.
-
-  Returns:
-    Reweighted Euclidean distance between two multivariate normal distributions.
-  """
-  mean_diff = linalg.safe_l2norm(mu0 - mu1)
-  cov_diff = linalg.safe_l2norm((cov0 - cov1).flatten())
-  return mean_weight * mean_diff + cov_weight * cov_diff

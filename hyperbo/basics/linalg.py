@@ -15,16 +15,14 @@
 
 """Common utils for gp_utils."""
 
-import logging
-
 from hyperbo.basics import params_utils
 
 import jax
-from jax.custom_derivatives import custom_vjp
 import jax.numpy as jnp
 import jax.scipy.linalg as jspla
 
 vmap = jax.vmap
+custom_vjp = jax.custom_derivatives.custom_vjp
 EPS = 1e-10
 
 
@@ -112,75 +110,20 @@ def solve_gp_linear_system(mean_func,
   return chol, kinvy, y
 
 
-def kl_multivariate_normal(mu0,
-                           cov0,
-                           mu1,
-                           cov1,
-                           weight=1.,
-                           partial=True,
-                           feat0=None,
-                           eps=0.):
-  """Computes KL divergence between two multivariate normal distributions.
+def svd_matrix_sqrt(cov):
+  """Compute the square root of a symmetric matrix via SVD.
 
   Args:
-    mu0: mean for the first multivariate normal distribution.
-    cov0: covariance matrix for the first multivariate normal distribution.
-    mu1: mean for the second multivariate normal distribution.
-    cov1: covariance matrix for the second multivariate normal distribution.
-      cov1 must be invertible.
-    weight: weight for the returned KL divergence.
-    partial: only compute terms in KL involving mu1 and cov1 if True.
-    feat0: (optional) feature used to compute cov0 if cov0 = feat0 * feat0.T /
-      feat0.shape[1]. For a low-rank cov0, we may have to compute the KL
-      divergence for a degenerate multivariate normal.
-    eps: (optional) small positive value added to the diagonal terms of cov0 and
-      cov1 to make them well behaved.
+    cov: a symmetric matrix.
 
   Returns:
-    KL divergence. The returned value does not include terms that are not
-    affected by potential model parameters in mu1 or cov1.
+    The decomposed factor A such that A * A.T = cov and A is full column rank.
   """
-  if not cov0.shape:
-    cov0 = cov0[jnp.newaxis, jnp.newaxis]
-  if not cov1.shape:
-    cov1 = cov1[jnp.newaxis, jnp.newaxis]
-
-  if eps > 0.:
-    cov0 = cov0 + jnp.eye(cov0.shape[0]) * eps
-    cov1 = cov1 + jnp.eye(cov1.shape[0]) * eps
-
-  mu_diff = mu1 - mu0
-  chol1, cov1invmudiff = solve_linear_system(cov1, mu_diff)
-  # pylint: disable=g-long-lambda
-  func = lambda x: inverse_spdmatrix_vector_product(
-      cov1, x, cached_cholesky=chol1)
-  trcov1invcov0 = jnp.trace(vmap(func)(cov0))
-  mahalanobis = jnp.dot(mu_diff, cov1invmudiff)
-  logdetcov1 = jnp.sum(2 * jnp.log(jnp.diag(chol1)))
-  common_terms = trcov1invcov0 + mahalanobis + logdetcov1
-  if partial:
-    return 0.5 * weight * common_terms
-  else:
-    if feat0 is not None and feat0.shape[0] > feat0.shape[1]:
-      logging.info('Using pseudo determinant of cov0.')
-      sign, logdetcov0 = jnp.linalg.slogdet(
-          jnp.divide(jnp.dot(feat0.T, feat0), feat0.shape[1]))
-      logging.info(msg=f'Pseudo logdetcov0 = {logdetcov0}')
-      assert sign == 1., 'Pseudo determinant of cov0 is 0 or negative.'
-
-      # cov0inv is computed for more accurate pseudo KL. feat0 may be low rank.
-      cov0inv = jnp.linalg.pinv(cov0)
-      return 0.5 * weight * (
-          common_terms - logdetcov0 -
-          jnp.linalg.matrix_rank(jnp.dot(cov0inv, cov0)) + jnp.log(2 * jnp.pi) *
-          (cov1.shape[0] - feat0.shape[1]))
-    else:
-      sign, logdetcov0 = jnp.linalg.slogdet(cov0)
-      logging.info(msg=f'sign = {sign}; logdetcov0 = {logdetcov0}')
-      assert sign == 1., 'Determinant of cov0 is 0 or negative.'
-      return 0.5 * weight * (common_terms - logdetcov0 - cov0.shape[0])
-
-
+  (u, s, _) = jspla.svd(cov)
+  factor = u * jnp.sqrt(s[..., None, :])
+  tol = s.max() * jnp.finfo(s.dtype).eps / 2. * jnp.sqrt(2*cov.shape[0] + 1.)
+  rank = jnp.count_nonzero(s > tol)
+  return factor[:, :rank]
 
 
 def cholesky_cache(spd_matrix, cached_cholesky):
