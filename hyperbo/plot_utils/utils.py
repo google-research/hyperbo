@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2023 HyperBO Authors.
+# Copyright 2024 HyperBO Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -118,7 +118,7 @@ def plot_all(label2array,
       ax.set_xscale('log')
     if logscale_y:
       ax.set_yscale('log')
-    ax.legend()
+
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
 
@@ -210,8 +210,7 @@ def plot_summary(labels,
         ncol=uppercenter_legend_ncol,
         fancybox=True,
         shadow=True)
-  else:
-    axes[0].legend()
+
   if ylim:
     axes[0].set_ylim(ylim[0], ylim[1])
   if xlim:
@@ -224,6 +223,7 @@ def plot_summary(labels,
   labels = violin_labels
   for i, trial in enumerate(violin_trials):
     data = []
+    x = None
     if n_remain:
       if 'x' not in kwargs:
         raise KeyError('The key "x" is not in kwargs.')

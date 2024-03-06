@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2023 HyperBO Authors.
+# Copyright 2024 HyperBO Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -148,3 +148,26 @@ def kl_multivariate_normal(
     return weight * ekl
 
 
+def euclidean_multivariate_normal(mu0,
+                                  cov0,
+                                  mu1,
+                                  cov1,
+                                  mean_weight=1.,
+                                  cov_weight=1.,
+                                  **unused_kwargs):
+  """Computes Euclidean distance between two multivariate normal distributions.
+
+  Args:
+    mu0: mean for the first multivariate normal distribution.
+    cov0: covariance matrix for the first multivariate normal distribution.
+    mu1: mean for the second multivariate normal distribution.
+    cov1: covariance matrix for the second multivariate normal distribution.
+    mean_weight: weight for euclidean distance on the mean vectors.
+    cov_weight: weight for euclidean distance on the covariance matrices.
+
+  Returns:
+    Reweighted Euclidean distance between two multivariate normal distributions.
+  """
+  mean_diff = linalg.safe_l2norm(mu0 - mu1)
+  cov_diff = linalg.safe_l2norm((cov0 - cov1).flatten())
+  return mean_weight * mean_diff + cov_weight * cov_diff
