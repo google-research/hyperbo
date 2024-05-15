@@ -67,9 +67,9 @@ def save_params(filenm: str,
   """Save to file."""
   if not isinstance(params, dict):
     params = params.__dict__
-  params = jax.tree_map(lambda x: str(x) if callable(x) else x, params)
+  params = jax.tree.map(lambda x: str(x) if callable(x) else x, params)
   if state:
-    state = jax.tree_map(lambda x: str(x) if callable(x) else x, state)
+    state = jax.tree.map(lambda x: str(x) if callable(x) else x, state)
   save_to_file(filenm, (params, state))
 
 

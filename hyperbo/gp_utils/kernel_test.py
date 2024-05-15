@@ -82,7 +82,7 @@ class KernelTest(parameterized.TestCase):
     vx2 = jax.random.normal(key2, (n2, X_DIM))
     if 'mlp_features' in params.config:
       bf.init_mlp_with_shape(key, params, vx1.shape)
-    logging.info(msg=f'params shapes:\n{jax.tree_map(jnp.shape, params)}')
+    logging.info(msg=f'params shapes:\n{jax.tree.map(jnp.shape, params)}')
     logging.info(msg=f'params:\n{params}')
     cov = cov_func(params, vx1, vx2)
     logging.info(msg=f'cov = {cov}')

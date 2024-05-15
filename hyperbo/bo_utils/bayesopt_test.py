@@ -79,9 +79,9 @@ class BayesOptTest(parameterized.TestCase):
       self.assertEqual(d.y.shape, (10, 1))
       self.assertIsNone(d.aligned)
     logging.info(
-        msg=f'dataset: {jax.tree_map(jnp.shape, dataset)}, '
+        msg=f'dataset: {jax.tree.map(jnp.shape, dataset)}, '
         f'queried sub-dataset key: {sub_dataset_key}'
-        f'queried sub-dataset: {jax.tree_map(jnp.shape, queried_sub_dataset)}')
+        f'queried sub-dataset: {jax.tree.map(jnp.shape, queried_sub_dataset)}')
     observations, queries, params = bayesopt.run_bayesopt(
         dataset=dataset,
         sub_dataset_key=sub_dataset_key,

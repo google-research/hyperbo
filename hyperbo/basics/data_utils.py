@@ -42,29 +42,29 @@ def log_dataset(dataset):
     return safef
 
   logging.info(msg=f'dataset len = {len(dataset)}.')
-  logging.info(msg=f'dataset shape: {jax.tree_map(safe(jnp.shape), dataset)}')
+  logging.info(msg=f'dataset shape: {jax.tree.map(safe(jnp.shape), dataset)}')
   logging.info(
       msg=(
           'dataset mean: '
-          f'{jax.tree_map(safe(partial(jnp.mean, axis=0)), dataset)}'
+          f'{jax.tree.map(safe(partial(jnp.mean, axis=0)), dataset)}'
       )
   )
   logging.info(
       msg=(
           'dataset median: '
-          f'{jax.tree_map(safe(partial(jnp.median, axis=0)), dataset)}'
+          f'{jax.tree.map(safe(partial(jnp.median, axis=0)), dataset)}'
       )
   )
   logging.info(
       msg=(
           'dataset min: '
-          f'{jax.tree_map(safe(partial(jnp.min, axis=0)), dataset)}'
+          f'{jax.tree.map(safe(partial(jnp.min, axis=0)), dataset)}'
       )
   )
   logging.info(
       msg=(
           'dataset max: '
-          f'{jax.tree_map(safe(partial(jnp.max, axis=0)), dataset)}'
+          f'{jax.tree.map(safe(partial(jnp.max, axis=0)), dataset)}'
       )
   )
 

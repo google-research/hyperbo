@@ -166,7 +166,7 @@ def get_aligned_dataset(trials,
         yy = jnp.array(sub_df[remain_groups])
         aligned_dataset[aligned_key] = SubDataset(
             x=xx, y=yy, aligned=';'.join(remain_groups + [aligned_suffix]))
-  msg = f'aligned dataset: {jax.tree_map(jnp.shape, aligned_dataset)}'
+  msg = f'aligned dataset: {jax.tree.map(jnp.shape, aligned_dataset)}'
   logging.info(msg=msg)
   if verbose:
     print(msg)
@@ -192,7 +192,7 @@ def get_dataset(trials, study_identifier, labels, verbose=True):
     xx = jnp.array(study_trials[labels[:-1]])
     yy = jnp.array(study_trials[labels[-1:]])
     dataset[sg] = SubDataset(x=xx, y=yy)
-  msg = f'dataset before align: {jax.tree_map(jnp.shape, dataset)}'
+  msg = f'dataset before align: {jax.tree.map(jnp.shape, dataset)}'
   logging.info(msg)
   if verbose:
     print(msg)

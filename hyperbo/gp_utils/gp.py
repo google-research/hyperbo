@@ -370,7 +370,7 @@ class GP:
         flag = 'Initialized'
       mlp_params = self.params.model['mlp_params']
       logging.info(msg=f'{flag} mlp_params: '
-                   f'{jax.tree_map(jnp.shape, mlp_params)}')
+                   f'{jax.tree.map(jnp.shape, mlp_params)}')
     else:
       last_layer_size = self.input_dim
     if 'linear' in self.mean_func.__name__:
@@ -384,13 +384,13 @@ class GP:
 
       linear_mean = self.params.model['linear_mean']
       logging.info(msg=f'{flag} linear_mean: '
-                   f'{jax.tree_map(jnp.shape, linear_mean)}')
+                   f'{jax.tree.map(jnp.shape, linear_mean)}')
 
     if check_param('lengthscale', jnp.ndarray):
       flag = 'Retained'
       lengthscale = self.params.model['lengthscale']
       logging.info(
-          msg=f'{flag} lengthscale: {jax.tree_map(jnp.shape, lengthscale)}'
+          msg=f'{flag} lengthscale: {jax.tree.map(jnp.shape, lengthscale)}'
       )
     elif check_param('lengthscale', float):
       if 'mlp' not in self.cov_func.__name__:
