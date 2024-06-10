@@ -48,7 +48,7 @@ def save_to_file(filenm: str, state: Any = None):
     return
   dirnm = os.path.dirname(filenm)
   if not gfile.Exists(dirnm):
-    gfile.MakeDirs(dirnm)
+    gfile.MakeDirs(dirnm, mode=gfile.LEGACY_GROUP_WRITABLE_WORLD_READABLE)
   with gfile.GFile(filenm, 'wb') as f:
     pickle.dump(state, f)
 
