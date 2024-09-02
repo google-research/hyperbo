@@ -1,7 +1,7 @@
 # HyperBO - Prior Discovery
-A Jax/Flax codebase for the algorithm in HyperBO described in *[Pre-trained Gaussian processes for Bayesian optimization](https://arxiv.org/abs/2109.08215)*.
+A Jax/Flax codebase for the algorithm in HyperBO described in *[Pre-trained Gaussian processes for Bayesian optimization](https://jmlr.org/papers/v25/23-0269.html)*.
 
-**[Research paper](https://arxiv.org/pdf/2109.08215.pdf)** | **[Blog post](https://ai.googleblog.com/2023/04/pre-trained-gaussian-processes-for.html)** | **[Colab Notebook](https://colab.research.google.com/github/google-research/hyperbo/blob/main/hyperbo/hyperbo_demo.ipynb)** | **[PD1 benchmark](https://github.com/google-research/hyperbo#pd1-benchmark)**
+**[Research paper (published in JMLR)](https://jmlr.org/papers/v25/23-0269.html)** | **[Blog post](https://research.google/blog/pre-trained-gaussian-processes-for-bayesian-optimization/)** | **[Colab Notebook](https://colab.research.google.com/github/google-research/hyperbo/blob/main/hyperbo/hyperbo_demo.ipynb)** | **[PD1 benchmark](https://github.com/google-research/hyperbo#pd1-benchmark)**
 
 Disclaimer: This is not an officially supported Google product.
 
@@ -45,17 +45,14 @@ See the "best_\*" columns for the best measurement achieved over training.
 ## Citation
 Please cite our work if you would like to use the code.
 ```
-@article{wang2023hyperbo,
-  title={{Pre-trained Gaussian processes for Bayesian optimization}},
-  author={Zi Wang and
-          George E. Dahl and
-          Kevin Swersky and
-          Chansoo Lee and
-          Zachary Nado and
-          Justin Gilmer and
-          Jasper Snoek and
-          Zoubin Ghahramani},
-  journal={arXiv preprint arXiv:2109.08215},
-  year={2023}
+@article{JMLR:v25:23-0269,
+  author  = {Zi Wang and George E. Dahl and Kevin Swersky and Chansoo Lee and Zachary Nado and Justin Gilmer and Jasper Snoek and Zoubin Ghahramani},
+  title   = {Pre-trained Gaussian Processes for Bayesian Optimization},
+  journal = {Journal of Machine Learning Research},
+  year    = {2024},
+  volume  = {25},
+  number  = {212},
+  pages   = {1--83},
+  url     = {http://jmlr.org/papers/v25/23-0269.html}
 }
 ```
