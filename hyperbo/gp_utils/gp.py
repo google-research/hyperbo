@@ -14,7 +14,7 @@
 # limitations under the License.
 
 """Inferrence and other util functions for a (multi-task) GP."""
-
+# pytype: disable=attribute-error
 import collections
 import functools
 import logging
@@ -506,25 +506,31 @@ class GP:
         params=self.params,
         dataset=self.dataset,
         warp_func=self.warp_func,
-        distance=distance)
+        distance=distance,
+    )
 
   def stats(
-      self,
-      verbose=True) -> Tuple[float, float, float, Dict[Union[int, str], float]]:
+      self, verbose=True
+  ) -> Tuple[float, float, float, float, Dict[Union[int, str], float]]:
     """Compute objective stats for current model."""
     nll, key2nll = self.neg_log_marginal_likelihood()
     ekl = self.empirical_divergence(
         distance=functools.partial(
-            utils.kl_multivariate_normal, eps=1e-6
+            utils.kl_multivariate_normal, eps=1e-6, partial=False
+        )
+    )
+    ekl_partial = self.empirical_divergence(
+        distance=functools.partial(
+            utils.kl_multivariate_normal, eps=1e-6, partial=True
         )
     )
     euc = self.empirical_divergence(
         distance=utils.euclidean_multivariate_normal)
-    msg = f'nll = {nll}, ekl = {ekl}, euc = {euc}'
+    msg = f'nll = {nll}, ekl = {ekl}, ekl_partial = {ekl_partial}, euc = {euc}'
     if verbose:
       print(msg)
     logging.info(msg=msg)
-    return nll, ekl, euc, key2nll
+    return nll, ekl, ekl_partial, euc, key2nll
 
   def update_model_params(self, model_params: Dict[str, Any]):
     """Update params.model (must clean up params.cache)."""
@@ -627,7 +633,7 @@ class HGP(GP):
   def stats(
       self,
       verbose: bool = True
-  ) -> Tuple[float, float, float, Dict[Union[int, str], float]]:
+  ) -> Tuple[float, float, float, float, Dict[Union[int, str], float]]:
     """Compute objective stats for current model."""
     samples = self.get_model_params_samples()
 
@@ -636,19 +642,25 @@ class HGP(GP):
     key2nll = []
     for model_params in samples:
       self.update_model_params(model_params)
-      nll, ekl, euc, key2nll = super().stats()
-      all_stats.append((nll, ekl, euc))
+      nll, ekl, ekl_partial, euc, key2nll = super().stats()
+      all_stats.append((nll, ekl, ekl_partial, euc))
       for k in key2nll:
         all_key2nll[k] += key2nll[k]
     for k in key2nll:
       all_key2nll[k] /= len(samples)
     all_stats = jnp.array(all_stats)
-    nll, ekl, euc = jnp.mean(all_stats, axis=0)
-    msg = f'HGP nll = {nll}, ekl = {ekl}, euc = {euc}'
+    nll, ekl, ekl_partial, euc = jnp.mean(all_stats, axis=0)
+    msg = (
+        f'HGP nll = {nll}, ekl = {ekl}, ekl_partial = {ekl_partial}, euc ='
+        f' {euc}'
+    )
     if verbose:
       print(msg)
     logging.info(msg=msg)
-    return nll, ekl, euc, all_key2nll
+    if verbose:
+      print(msg)
+    logging.info(msg=msg)
+    return nll, ekl, ekl_partial, euc, all_key2nll
 
   def predict(
       self,  # pytype: disable=signature-mismatch  # overriding-parameter-count-checks

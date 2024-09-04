@@ -38,7 +38,6 @@ class SubDataset(NamedTuple):
 @dataclasses.dataclass
 class GPParams:
   """Parameters in a GP."""
-
   config: Dict[str, Any] = dataclasses.field(default_factory=lambda: {})
   model: Dict[str, Any] = dataclasses.field(default_factory=lambda: {})
   cache: Dict[Union[int, str], GPCache] = dataclasses.field(
