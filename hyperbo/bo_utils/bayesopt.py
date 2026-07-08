@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2025 HyperBO Authors.
+# Copyright 2026 HyperBO Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -266,13 +266,13 @@ def run_bayesopt(
   if init_model:
     assert init_random_key is not None, ('Cannot initialize with '
                                          'init_random_key == None.')
-    key, subkey = jax.random.split(key)
+    key, subkey = jax.random.split(key)  # pyrefly: ignore[bad-argument-type]
     model.initialize_params(subkey)
     # Infer GP parameters.
     key, subkey = jax.random.split(key)
     model.train(subkey, get_params_path, callback=callback)
   else:
-    key, subkey = jax.random.split(key)
+    key, subkey = jax.random.split(key)  # pyrefly: ignore[bad-argument-type]
     model.rng = subkey
   if isinstance(queried_sub_dataset, SubDataset):
     best_query = get_best_datapoint(queried_sub_dataset)
@@ -284,7 +284,7 @@ def run_bayesopt(
         iters=iters,
         random_key=key,
         get_params_path=get_params_path if save_retrain_model else None,
-        callback=callback if save_retrain_model else None)
+        callback=callback if save_retrain_model else None)  # pyrefly: ignore[bad-argument-type]
     return (sub_dataset.x,
             sub_dataset.y), best_query, model.params
   else:

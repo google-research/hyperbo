@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2025 HyperBO Authors.
+# Copyright 2026 HyperBO Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -133,7 +133,7 @@ def backtracking_linesearch(val_and_grad_fn,
     else:
       alpha *= tau
 
-  if (not jnp.isnan(new_val)) and jnp.isfinite(new_val):
+  if (not jnp.isnan(new_val)) and jnp.isfinite(new_val):  # pyrefly: ignore[unbound-name]
     return new_val, alpha
   else:  # If we hit nans or infs return where we started.
     return cur_val, 0.
@@ -280,7 +280,7 @@ def lbfgs(fn,
                                  descent_dir)
     else:
       logging.info("Linesearch did not make progress.")
-      new_val = (new_val, aux) if has_aux else new_val
+      new_val = (new_val, aux) if has_aux else new_val  # pyrefly: ignore[unbound-name]
       return new_val, params, (s_k, y_k, old_grads, old_params)
   else:
     s_k, y_k, old_grads, old_params = state
@@ -344,6 +344,6 @@ def lbfgs(fn,
       break
 
   if has_aux:
-    return (new_val, aux), params, (s_k, y_k, old_grads, old_params)
+    return (new_val, aux), params, (s_k, y_k, old_grads, old_params)  # pyrefly: ignore[unbound-name]
   else:
-    return new_val, params, (s_k, y_k, old_grads, old_params)
+    return new_val, params, (s_k, y_k, old_grads, old_params)  # pyrefly: ignore[unbound-name]

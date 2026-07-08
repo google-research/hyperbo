@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2025 HyperBO Authors.
+# Copyright 2026 HyperBO Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -71,7 +71,7 @@ def run_in_parallel(function, list_of_kwargs_to_function, num_workers):
     for f in concurrent.futures.as_completed(futures):
       if f.exception():
         # Propagate exception to main thread.
-        raise f.exception()
+        raise f.exception()  # pyrefly: ignore[bad-raise]
 
   return [f.result() for f in futures]
 
@@ -213,10 +213,11 @@ def get_hpob_exp(kwarg, verbose=True):
     res['yy'] = yy
     res['maxy'] = maxy
   if verbose:
+    # pyrefly: ignore[unbound-name]
     print(f'filenm={filenm}, \n'
           f'len(regret)={len(regret_array)}, \n'
           f'final regret={regret_array[-1]} \n')
-    print((exp_key, unique_id), flush=True)
+    print((exp_key, unique_id), flush=True)  # pyrefly: ignore[unbound-name]
   return (exp_key, unique_id), results
 
 

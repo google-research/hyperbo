@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2025 HyperBO Authors.
+# Copyright 2026 HyperBO Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -90,9 +90,9 @@ def perturb_dataset_with_flat_functions(dataset, maxval):
     if d.aligned:
       flat_val = jax.random.uniform(
           subkey, (d.y.shape), minval=0, maxval=maxval)
-      d.y = jnp.concatenate((d.y, flat_val))
+      d.y = jnp.concatenate((d.y, flat_val))  # pyrefly: ignore[read-only]
     else:
-      flat_dataset[d.name + 'flat'] = SubDataset(
+      flat_dataset[d.name + 'flat'] = SubDataset(  # pyrefly: ignore[missing-attribute]
           d.x,
           jax.random.uniform(
               subkey, (d.y.shape), minval=0, maxval=maxval))
@@ -159,7 +159,7 @@ def get_aligned_dataset(trials,
           print('sub_df: ', sub_df.shape)
         aligned_key = ';'.join(list(groups) + [aligned_suffix])
 
-        key, subkey = jax.random.split(key, 2)
+        key, subkey = jax.random.split(key, 2)  # pyrefly: ignore[bad-argument-type]
         sub_df = sample_dataframe(subkey, sub_df, p_remove=p_remove)
 
         xx = jnp.array(sub_df[labels[:-1]])

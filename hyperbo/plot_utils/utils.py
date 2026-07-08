@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2025 HyperBO Authors.
+# Copyright 2026 HyperBO Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -187,10 +187,10 @@ def plot_summary(labels,
     raise ValueError('Must define colors: dict mapping from label to color.')
   n_remain = True if 'n_remain' in kwargs else False
 
-  if fig_axes is None or len(fig_axes[1]) < len(violin_trials) + 1:
+  if fig_axes is None or len(fig_axes[1]) < len(violin_trials) + 1:  # pyrefly: ignore[bad-argument-type]
     plt.figure(dpi=1500)
     fig, axes = plt.subplots(
-        nrows=1, ncols=len(violin_trials) + 1, figsize=figsize)
+        nrows=1, ncols=len(violin_trials) + 1, figsize=figsize)  # pyrefly: ignore[bad-argument-type]
   else:
     fig, axes = fig_axes
   plot_all({la: label2array.get(la, None) for la in labels},
@@ -234,7 +234,7 @@ def plot_summary(labels,
     for la in labels:
       if n_remain and la == 'H-EKL':
         trial = None
-        for j, p in enumerate(x):
+        for j, p in enumerate(x):  # pyrefly: ignore[bad-argument-type]
           if p * 242 <= num_data:
             trial = j
           else:

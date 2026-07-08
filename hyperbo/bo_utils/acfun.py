@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2025 HyperBO Authors.
+# Copyright 2026 HyperBO Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -79,7 +79,7 @@ def acfun_wrapper(
       ac_vals = []
       for mu, var in predicts:
         ac_vals.append(acfun_sub(mu, jnp.sqrt(var), acfun_param))
-      ac_val = jnp.mean(ac_vals, axis=0)
+      ac_val = jnp.mean(ac_vals, axis=0)  # pyrefly: ignore[bad-argument-type]
     else:
       mu, var = model.predict(
           x_queries,
