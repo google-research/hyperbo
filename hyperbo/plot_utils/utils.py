@@ -234,7 +234,7 @@ def plot_summary(labels,
     for la in labels:
       if n_remain and la == 'H-EKL':
         trial = None
-        for j, p in enumerate(x):  # pyrefly: ignore[bad-argument-type]
+        for j, p in enumerate(x):  # pyrefly: ignore[bad-argument-type, not-iterable]
           if p * 242 <= num_data:
             trial = j
           else:
