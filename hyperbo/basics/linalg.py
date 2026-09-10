@@ -138,7 +138,7 @@ def cholesky_cache(spd_matrix, cached_cholesky):
 
 @custom_vjp
 def inverse_spdmatrix_vector_product(spd_matrix, x, cached_cholesky=None):
-  """Computes the inverse matrix vector product where the matrix is SPD."""
+  """Solves an SPD system with a vector or matrix of right-hand sides."""
   chol_factor = cholesky_cache(spd_matrix, cached_cholesky)
 
   out = jspla.cho_solve((chol_factor, True), x)
@@ -161,7 +161,11 @@ def inverse_spdmatrix_vector_product_bwd(res, g):
   inv_spd_matrix_x = jspla.cho_solve((chol_factor, True), x)
   inv_spd_matrix_g = jspla.cho_solve((chol_factor, True), g)
 
-  grad_spd_matrix = -(jnp.outer(inv_spd_matrix_x, inv_spd_matrix_g))
+  if x.ndim == 1:
+    grad_spd_matrix = -jnp.outer(inv_spd_matrix_x, inv_spd_matrix_g)
+  else:
+    # Sum the per-column outer products without flattening the right-hand sides.
+    grad_spd_matrix = -inv_spd_matrix_x @ inv_spd_matrix_g.T
   grad_x = jspla.cho_solve((chol_factor, True), g)
 
   return (grad_spd_matrix, grad_x, None)
