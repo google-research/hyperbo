@@ -17,6 +17,7 @@
 import copy
 
 from absl.testing import absltest
+from absl.testing import parameterized
 from hyperbo.basics import linalg
 import jax
 from jax import random
@@ -108,6 +109,52 @@ class LinalgTest(absltest.TestCase):
 
     test_grad_at_index(0)
     test_grad_at_index(1)
+
+
+class MatrixRightHandSideTest(parameterized.TestCase):
+
+  @parameterized.product(
+      columns=[1, 3], cached=[False, True], compiled=[False, True])
+  def test_matches_independent_vector_solves(self, columns, cached, compiled):
+    matrix = jnp.array([[3., 0.5], [0.5, 2.]])
+    rhs = jnp.arange(1., 2 * columns + 1).reshape(2, columns)
+    cotangent = jnp.linspace(-1., 2., 2 * columns).reshape(2, columns)
+
+    def objective(a, x):
+      chol = jspla.cholesky(a, lower=True) if cached else None
+      solution = linalg.inverse_spdmatrix_vector_product(a, x, chol)
+      return jnp.sum(solution * cotangent)
+
+    def reference(a, x):
+      chol = jspla.cholesky(a, lower=True) if cached else None
+      return sum(
+          jnp.vdot(linalg.inverse_spdmatrix_vector_product(a, x[:, i], chol),
+                   cotangent[:, i]) for i in range(columns))
+
+    evaluate = jax.value_and_grad(objective, argnums=(0, 1))
+    if compiled:
+      evaluate = jax.jit(evaluate)
+    actual_value, (actual_matrix, actual_rhs) = evaluate(matrix, rhs)
+    expected_value, (expected_matrix, expected_rhs) = jax.value_and_grad(
+        reference, argnums=(0, 1))(matrix, rhs)
+    self.assertEqual(actual_matrix.shape, matrix.shape)
+    self.assertEqual(actual_rhs.shape, rhs.shape)
+    np.testing.assert_allclose(
+        actual_value, expected_value, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(
+        actual_matrix, expected_matrix, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(
+        actual_rhs, expected_rhs, rtol=1e-6, atol=1e-6)
+
+    # Independently verify derivatives along the symmetric matrix domain.
+    direction = jnp.array([[0.3, -0.2], [-0.2, 0.4]])
+    eps = 1e-3
+    numerical = (objective(matrix + eps * direction, rhs)
+                 - objective(matrix - eps * direction, rhs)) / (2 * eps)
+    np.testing.assert_allclose(
+        jnp.vdot(actual_matrix, direction), numerical, rtol=2e-3, atol=2e-4)
+    np.testing.assert_allclose(
+        actual_rhs, jnp.linalg.solve(matrix, cotangent), rtol=1e-6, atol=1e-6)
 
 
 if __name__ == '__main__':
