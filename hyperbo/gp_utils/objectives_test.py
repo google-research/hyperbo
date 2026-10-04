@@ -35,6 +35,8 @@ from hyperbo.gp_utils import mean
 from hyperbo.gp_utils import objectives as obj
 from hyperbo.gp_utils import utils
 import jax
+import jax.numpy as jnp
+import numpy as np
 
 DEFAULT_WARP_FUNC = utils.DEFAULT_WARP_FUNC
 GPParams = defs.GPParams
@@ -43,6 +45,67 @@ retrieve_params = params_utils.retrieve_params
 
 class ObjectivesTest(parameterized.TestCase):
   """Tests for objectives.py."""
+
+  @parameterized.product(
+      regularizer=('regkl', 'regeuc'),
+      weight_and_suffix=((0.1, '01'), (1.0, '1'), (10.0, '10')),
+      jitted=(False, True),
+  )
+  def test_regularized_objective_presets(
+      self, regularizer, weight_and_suffix, jitted
+  ):
+    weight, suffix = weight_and_suffix
+    x = jnp.array([[0.0], [1.0]])
+    aligned_y = jnp.array([[0.0, 2.0, 4.0], [1.0, -1.0, 0.0]])
+    dataset = {
+        'observed': defs.SubDataset(x=x, y=jnp.array([[1.0], [2.0]])),
+        'aligned': defs.SubDataset(x=x, y=aligned_y, aligned=True),
+    }
+    preset = getattr(obj, f'nll_{regularizer}{suffix}')
+    regularizer_fn = getattr(obj, regularizer)
+
+    def evaluate(constant, objective):
+      params = GPParams(
+          model={
+              'constant': constant,
+              'lengthscale': 0.7,
+              'signal_variance': 1.2,
+              'noise_variance': 0.1,
+          }
+      )
+      return objective(
+          mean_func=mean.constant,
+          cov_func=kernel.squared_exponential,
+          params=params,
+          dataset=dataset,
+      )
+
+    expected_objective = lambda **kwargs: (
+        obj.nll(**kwargs) + weight * regularizer_fn(**kwargs)
+    )
+    actual_fn = jax.value_and_grad(
+        functools.partial(evaluate, objective=preset)
+    )
+    expected_fn = jax.value_and_grad(
+        functools.partial(evaluate, objective=expected_objective)
+    )
+    if jitted:
+      actual_fn, expected_fn = jax.jit(actual_fn), jax.jit(expected_fn)
+    actual_value, actual_grad = actual_fn(0.3)
+    expected_value, expected_grad = expected_fn(0.3)
+
+    np.testing.assert_allclose(actual_value, expected_value, rtol=1e-6)
+    np.testing.assert_allclose(actual_grad, expected_grad, rtol=1e-6)
+    # Keep the fixture discriminating: using the other regularizer must differ.
+    other_regularizer = obj.regkl if regularizer == 'regeuc' else obj.regeuc
+    self.assertGreater(
+        abs(
+            float(
+                evaluate(0.3, regularizer_fn) - evaluate(0.3, other_regularizer)
+            )
+        ),
+        0.1,
+    )
 
   @parameterized.named_parameters(
       ('squared_exponential kl', kernel.squared_exponential,
