@@ -107,7 +107,7 @@ def expected_improvement_sub(mu, std, target):
   """
   gamma = (target - mu) / std
   return (jsp.stats.norm.pdf(gamma) - gamma *
-          (1 - jsp.stats.norm.cdf(gamma))) * std
+          jsp.stats.norm.sf(gamma)) * std
 
 
 def probability_of_improvement_sub(mu, std, target):
