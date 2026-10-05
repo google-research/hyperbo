@@ -555,7 +555,7 @@ def get_output_warper(output_log_warp=True, return_warping=False):
     def output_warping(f):
 
       def warpped_f(x_array):
-        y = f(x_array)  # pytype: disable=wrong-arg-types  # jax-types
+        y = f(x_array)
         if not np.all(y <= 1. + 1e-11):
           raise ValueError(f'Use output_log_warp only if f({x_array})={y} '
                            'is smaller than or equal to 1.')

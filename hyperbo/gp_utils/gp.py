@@ -14,7 +14,6 @@
 # limitations under the License.
 
 """Inferrence and other util functions for a (multi-task) GP."""
-# pytype: disable=attribute-error
 import collections
 import functools
 import logging
@@ -416,7 +415,7 @@ class GP:
     if isinstance(dataset, list):
       dataset = {i: dataset[i] for i in range(len(dataset))}
     for key, val in dataset.items():
-      self.dataset[key] = SubDataset(*val)
+      self.dataset[key] = SubDataset(*val)  # pyrefly: ignore[bad-argument-type]
 
   @property
   def input_dim(self) -> int:
@@ -436,7 +435,7 @@ class GP:
       sub_dataset_key: the key of the sub-dataset in dataset.
       is_append: append to the sub-dataset if True; otherwise replace it.
     """
-    sub_dataset = SubDataset(*sub_dataset)
+    sub_dataset = SubDataset(*sub_dataset)  # pyrefly: ignore[bad-argument-type]
 
     if is_append:
       if sub_dataset_key not in self.dataset:
@@ -662,8 +661,8 @@ class HGP(GP):
     logging.info(msg=msg)
     return nll, ekl, ekl_partial, euc, all_key2nll
 
-  def predict(
-      self,  # pytype: disable=signature-mismatch  # overriding-parameter-count-checks
+  def predict(  # pyrefly: ignore[bad-override]
+      self,
       queried_inputs: jnp.ndarray,
       sub_dataset_key: Union[int, str] = 0,
       full_cov: bool = False,
