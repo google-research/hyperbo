@@ -659,7 +659,7 @@ class HGP(GP):
     if verbose:
       print(msg)
     logging.info(msg=msg)
-    return nll, ekl, ekl_partial, euc, all_key2nll
+    return nll, ekl, ekl_partial, euc, all_key2nll  # pyrefly: ignore[bad-return]
 
   def predict(  # pyrefly: ignore[bad-override]
       self,
