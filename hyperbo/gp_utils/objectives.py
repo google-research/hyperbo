@@ -128,7 +128,9 @@ def neg_log_marginal_likelihood(mean_func,
       SubDataset.
     warp_func: optional dictionary that specifies the warping function for each
       parameter.
-    exclude_aligned: exclude sub-datasets that are aligned.
+    exclude_aligned: exclude sub-datasets that are aligned. When included, each
+      column of an aligned sub-dataset is an independent GP sample whose log
+      likelihood is added to the others.
     return_key2nll: return total_nll together with the dictionary mapping from
       sub-dataset key to its corresponding nll value.
     use_cholesky: use cholesky to compute NLL if True; otherwise, use SVD. We
@@ -143,16 +145,18 @@ def neg_log_marginal_likelihood(mean_func,
 
   def compute_nll_sub_dataset_cholesky(vx, vy):
     """Compute negative log likelihood for one sub dataset."""
-    chol, kinvy, vy = linalg.solve_gp_linear_system(
+    vy, cov = linalg.compute_delta_y_and_cov(
         mean_func=mean_func,
         cov_func=cov_func,
         params=params,
         x=vx,
         y=vy,
         warp_func=warp_func)
-    nll_val = jnp.sum(0.5 * jnp.dot(vy.T, kinvy) +
-                      jnp.sum(jnp.log(jnp.diag(chol))) +
-                      0.5 * len(vx) * jnp.log(2 * jnp.pi))
+    chol = jspla.cholesky(cov, lower=True)
+    whitened = jspla.solve_triangular(chol, vy, lower=True)
+    nll_val = 0.5 * jnp.sum(whitened**2) + vy.shape[1] * (
+        jnp.sum(jnp.log(jnp.diag(chol)))
+        + 0.5 * len(vx) * jnp.log(2 * jnp.pi))
     return nll_val
   def compute_nll_sub_dataset_svd(vx, vy):
     """Compute negative log likelihood for one sub dataset."""
@@ -168,10 +172,10 @@ def neg_log_marginal_likelihood(mean_func,
       logging.warning(msg=f'Covariance matrix is low rank. s = {s}')
     kinv = jnp.dot(v.T, jnp.dot(jnp.diag(s**-1), u.T))
     kinvy = jnp.dot(kinv, vy)
-    nll_val = 0.5 * jnp.sum(
-        jnp.dot(vy.T, kinvy)
-        + jnp.sum(jnp.log(s))
-        + len(vx) * jnp.log(2 * jnp.pi)
+    nll_val = 0.5 * (
+        jnp.sum(vy * kinvy)
+        + vy.shape[1] * (jnp.sum(jnp.log(s))
+                         + len(vx) * jnp.log(2 * jnp.pi))
     )
     return nll_val
 
